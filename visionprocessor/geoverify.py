@@ -34,8 +34,8 @@ def get_gps_data(image_path):
 
 def get_gps_location(gps_json_file, device_id):
     orig_bounds = None
-	with open(gps_json_file, 'r') as f:
-		orig_bounds = json.load(f)
+    with open(gps_json_file, 'r') as f:
+        orig_bounds = json.load(f)
     if orig_bounds and device_id in orig_bounds:
         return orig_bounds[device_id]
     return None
