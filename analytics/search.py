@@ -1,91 +1,49 @@
-from dotenv import load_dotenv,dotenv_values
-import json
-import os
 import requests
-import http.client, urllib.parse
-from tenacity import retry, stop_after_attempt, wait_fixed
-from dotenv import load_dotenv  
-from azure.core.credentials import AzureKeyCredential
-from azure.identity import DefaultAzureCredential
-from azure.search.documents import SearchClient  
-from azure.search.documents.indexes import SearchIndexClient  
-from azure.search.documents.models import (
-    RawVectorQuery,
-)
-from azure.search.documents.indexes.models import (  
- 
-    ExhaustiveKnnParameters,  
-    ExhaustiveKnnVectorSearchAlgorithmConfiguration,
-    HnswParameters,  
-    HnswVectorSearchAlgorithmConfiguration,
-    SimpleField,
-    SearchField,  
-    SearchFieldDataType,  
-    SearchIndex,  
-    VectorSearch,  
-    VectorSearchAlgorithmKind,  
-    VectorSearchProfile,  
-)
+import json
+import sys
+import os
+# Add the parent folder to the module search path
+sys.path.insert(0, os.path.abspath(".."))
+from visionprocessor.vectorizer import vectorize_image
 
-from IPython.display import Image, display
-load_dotenv()  
-service_endpoint = os.getenv("AZURE_SEARCH_SERVICE_ENDPOINT")  
+# Azure AI Search configurations
+search_endpoint = os.getenv("AZURE_SEARCH_SERVICE_ENDPOINT")  
 index_name = os.getenv("AZURE_SEARCH_INDEX_NAME")
-api_version = os.getenv("AZURE_SEARCH_API_VERSION")
-key = os.getenv("AZURE_SEARCH_ADMIN_KEY")  
-aiVisionApiKey = os.getenv("AZURE_AI_VISION_API_KEY")  
-aiVisionRegion = os.getenv("AZURE_AI_VISION_REGION")
-aiVisionEndpoint = os.getenv("AZURE_AI_VISION_ENDPOINT")
-credential = AzureKeyCredential(key)
+search_api_key = os.getenv("AZURE_SEARCH_ADMIN_KEY")  
+vision_api_key = os.getenv("AZURE_AI_VISION_API_KEY")
 
-search_client = SearchClient(endpoint=service_endpoint, 
-                             index_name=index_name, 
-                             credential=credential)
+# Query string for red cars
+query_text = "Find red cars in drone images"
+blob_url = "https://saravinoteblogs.blob.core.windows.net/playground/vision/query/RedCar1.jpg?sp=racwdle&st=2025-05-26T23:54:09Z&se=2025-05-27T07:54:09Z&spr=https&sv=2024-11-04&sr=d&sig=9RRmmtlBnEiFsOGHJ2d%2ByEkBz2gxXOrQEc%2B4uf%2Fd6ao%3D&sdd=2"
+vector = vectorize_image(blob_url, vision_api_key, "eastus")
+print(f"len={len(vector)}")
+# Vector search payload
+search_payload = {
+    "search": query_text,
+    "vector": vector,  # Example query vector
+    "vectorFields": "vector",
+    "searchFields": "description",
+    "select": "id, description",
+    "top": 10
+}
 
+# Headers for Azure Search API
+headers = {
+    "Content-Type": "application/json",
+    "api-key": search_api_key
+}
 
-def generate_embeddings(text, aiVisionEndpoint, aiVisionApiKey):  
-    url = f"{aiVisionEndpoint}/computervision/retrieval:vectorizeText"  
-  
-    params = {  
-        "api-version": "2023-02-01-preview"  
-    }  
-  
-    headers = {  
-        "Content-Type": "application/json",  
-        "Ocp-Apim-Subscription-Key": aiVisionApiKey  
-    }  
-  
-    data = {  
-        "text": text  
-    }  
-  
-    response = requests.post(url, params=params, headers=headers, json=data)  
-  
-    if response.status_code == 200:  
-        embeddings = response.json()["vector"]  
-        return embeddings  
-    else:  
-        print(f"Error: {response.status_code} - {response.text}")  
-        return None  
-    
-query = "truck"
+# Send search request to Azure AI Search
+response = requests.post(
+    f"{search_endpoint}/indexes/{index_name}/docs/search?api-version=2023-07-01",
+    headers=headers,
+    data=json.dumps(search_payload)
+)
 
-vector_text = generate_embeddings(query, aiVisionEndpoint, aiVisionApiKey)
+# Parse response
+search_results = response.json()
 
-vector_query = RawVectorQuery(vector=vector_text,
-                              k=3, 
-                              fields="image_vector")  
+# Count occurrences of "red car" in descriptions
+red_car_count = sum(1 for item in search_results.get("value", []) if "red car" in item["description"].lower())
 
-# Perform vector search  
-results = search_client.search(  
-    search_text=None,  
-    vector_queries= [vector_query],
-    select=["description"]  
-)  
-
-FILE_PATH = os.getenv("FILE_PATH") or 'data/frames/main' 
-DIR_PATH = os.path.join(os.getcwd(), FILE_PATH)
-for result in results:
-    print(f"{result['description']}")
-    display(Image(DIR_PATH + "/" + result["description"]))
-    print("\n") 
+print(f"Total red cars found in drone images: {red_car_count}")
