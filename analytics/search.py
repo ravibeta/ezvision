@@ -14,7 +14,7 @@ vision_api_key = os.getenv("AZURE_AI_VISION_API_KEY")
 
 # Query string for red cars
 query_text = "Find red cars in drone images"
-blob_url = "https://saravinoteblogs.blob.core.windows.net/playground/vision/query/RedCar1.jpg?sp=racwdle&st=2025-05-26T23:54:09Z&se=2025-05-27T07:54:09Z&spr=https&sv=2024-11-04&sr=d&sig=9RRmmtlBnEiFsOGHJ2d%2ByEkBz2gxXOrQEc%2B4uf%2Fd6ao%3D&sdd=2"
+blob_url = "https://saravinoteblogs.blob.core.windows.net/playground/vision/query/RedCar4.jpg?sp=racwdle&st=2025-05-26T23:54:09Z&se=2025-05-27T07:54:09Z&spr=https&sv=2024-11-04&sr=d&sig=9RRmmtlBnEiFsOGHJ2d%2ByEkBz2gxXOrQEc%2B4uf%2Fd6ao%3D&sdd=2"
 vector = vectorize_image(blob_url, vision_api_key, "eastus")
 print(f"len={len(vector)}")
 # Vector search payload
