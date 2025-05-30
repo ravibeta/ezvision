@@ -25,14 +25,14 @@ openai_api_key = os.getenv("AZURE_OPENAI_API_KEY")
 credential = AzureKeyCredential(openai_api_key)
 
 # Set up the Azure OpenAI client
-token_provider = get_bearer_token_provider(AzureKeyCredential(openai_api_key), "https://cognitiveservices.azure.com/.default")
+token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default")
 openai_client = AzureOpenAI(
      api_version="2024-06-01",
      azure_endpoint=openai_endpoint,
      azure_ad_token_provider=token_provider
  )
 
-deployment_name = "gpt-4o"
+deployment_name = "text-embedding-ada-002"
 
 # Set up the Azure Azure AI Search client
 search_client = SearchClient(
@@ -57,21 +57,30 @@ Sources:\n{sources}
 # It's hybrid: a keyword search on "query", with text-to-vector conversion for "vector_query".
 # The vector query finds 50 nearest neighbor matches in the search index
 query="Do bicycles have a dedicated crossing at street intersections?"
-vector_query = VectorizableTextQuery(text=query, k_nearest_neighbors=50, fields="image_vector")
+vector_query = VectorizableTextQuery(text=query, fields="vector", Exhaustive=True, KNearestNeighborsCount=50)
+vector_query.Text = query
+vector_query.fields = "vector"
+vector_query.Exhaustive = True
+vector_query.KNearestNeighborsCount = 50
 
 # Set up the search results and the chat thread.
 # Retrieve the selected fields from the search index related to the question.
 # Search results are limited to the top 5 matches. Limiting top can help you stay under LLM quotas.
-search_results = search_client.search(
+results = search_client.search(
     search_text=query,
     vector_queries= [vector_query],
     select=["id", "description"],
-    top=5,
+    include_total_count = True,
+    semantic_configuration_name = "mysemantic",
+    top=5
 )
-
+references = []
+if results != None and results.get_count():
+    print(f"Number of results: {results.get_count()}")
+    references = [f'ID: {document["id"]}' for document in results]
 # Use a unique separator to make the sources distinct. 
 # We chose repeated equal signs (=) followed by a newline because it's unlikely the source documents contain this sequence.
-sources_formatted = "=================\n".join([f'ID: {document["id"]}' for document in search_results])
+sources_formatted = "=================\n".join(references)
 response = openai_client.chat.completions.create(
     messages=[
         {
