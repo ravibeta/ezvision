@@ -13,7 +13,7 @@ from azure.search.documents.models import (
 )
 from openai import AzureOpenAI
 search_endpoint = os.getenv("AZURE_SEARCH_SERVICE_ENDPOINT")  
-index_name = os.getenv("AZURE_SEARCH_INDEX_NAME")
+index_name = os.getenv("AZURE_SEARCH_NEW_INDEX_NAME")
 api_version = os.getenv("AZURE_SEARCH_API_VERSION")
 search_api_key = os.getenv("AZURE_SEARCH_ADMIN_KEY")
 vision_api_key = os.getenv("AZURE_AI_VISION_API_KEY")
@@ -25,7 +25,7 @@ openai_api_key = os.getenv("AZURE_OPENAI_API_KEY")
 credential = AzureKeyCredential(openai_api_key)
 
 # Set up the Azure OpenAI client
-token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default")
+token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://search.azure.com/.default")
 openai_client = AzureOpenAI(
      api_version="2024-06-01",
      azure_endpoint=openai_endpoint,
@@ -38,7 +38,7 @@ deployment_name = "text-embedding-ada-002"
 search_client = SearchClient(
      endpoint=search_endpoint,
      index_name=index_name,
-     credential=AzureKeyCredential(search_api_key)
+     credential=DefaultAzureCredential() # AzureKeyCredential(search_api_key)
  )
 
 # Provide instructions to the model
@@ -75,9 +75,10 @@ results = search_client.search(
     top=5
 )
 references = []
-if results != None and results.get_count():
-    print(f"Number of results: {results.get_count()}")
+if results != None:
+    # print(f"Number of results: {results.get_count()}")
     references = [f'ID: {document["id"]}' for document in results]
+    print("Number of references: {len(references)}")
 # Use a unique separator to make the sources distinct. 
 # We chose repeated equal signs (=) followed by a newline because it's unlikely the source documents contain this sequence.
 sources_formatted = "=================\n".join(references)
