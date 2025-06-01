@@ -1,0 +1,2 @@
+# https://azure.github.io/azure-sdk/releases/latest/python.html
+azure-search-documents==11.6.0b12
