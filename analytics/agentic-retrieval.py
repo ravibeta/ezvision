@@ -1,25 +1,31 @@
 #!/usr/bin/python
 from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.core.credentials import AzureKeyCredential
 import os
 
 load_dotenv(override=True)
 
-project_endpoint = os.environ["PROJECT_ENDPOINT"]
-agent_model = os.getenv("AGENT_MODEL", "gpt-4o-mini")
+project_endpoint = os.environ["AZURE_PROJECT_ENDPOINT"]
+project_api_key = os.environ["AZURE_PROJECT_API_KEY"]
+agent_model = os.getenv("AZURE_AGENT_MODEL", "gpt-4o-mini")
 search_endpoint = os.environ["AZURE_SEARCH_SERVICE_ENDPOINT"]
 api_version = os.getenv("AZURE_SEARCH_API_VERSION")
 search_api_key = os.getenv("AZURE_SEARCH_ADMIN_KEY")
-credential = DefaultAzureCredential()
-token_provider = get_bearer_token_provider(credential, "https://search.azure.com/.default")
-index_name = os.getenv("AZURE_SEARCH_NEW_INDEX_NAME", "index01")
+credential = AzureKeyCredential(search_api_key)
+token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://search.azure.com/.default")
+index_name = os.getenv("AZURE_SEARCH_INDEX_NAME", "index00")
 azure_openai_endpoint = os.environ["AZURE_OPENAI_ENDPOINT"]
 azure_openai_api_key = os.getenv("AZURE_OPENAI_API_KEY")
 azure_openai_gpt_deployment = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT", "gpt-4o-mini")
 azure_openai_gpt_model = os.getenv("AZURE_OPENAI_GPT_MODEL", "gpt-4o-mini")
-azure_openai_embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
-azure_openai_embedding_model = os.getenv("AZURE_OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
-agent_name = os.getenv("AZURE_SEARCH_AGENT_NAME", "agentic-retrieval-drone-images")
+azure_openai_embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002")
+azure_openai_embedding_model = os.getenv("AZURE_OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")
+agent_name = os.getenv("AZURE_SEARCH_AGENT_NAME", "agent01")
+print(f"Agent Name={agent_name}")
+print(f"Index Name={index_name}")
+api_version = "2025-05-01-Preview"
+agent_max_output_tokens=10000
 
 from azure.search.documents.indexes.models import KnowledgeAgent, KnowledgeAgentAzureOpenAIModel, KnowledgeAgentTargetIndex, KnowledgeAgentRequestLimits, AzureOpenAIVectorizerParameters
 from azure.search.documents.indexes import SearchIndexClient
@@ -46,13 +52,13 @@ agent = KnowledgeAgent(
     )
 )
 
-index_client = SearchIndexClient(endpoint=search_endpoint, credential=credential)
+index_client = SearchIndexClient(endpoint=search_endpoint, credential=AzureKeyCredential(search_api_key))
 index_client.create_or_update_agent(agent)
 print(f"Knowledge agent '{agent_name}' created or updated successfully")
 
 from azure.ai.projects import AIProjectClient
 
-project_client = AIProjectClient(endpoint=project_endpoint, credential=credential)
+project_client = AIProjectClient(endpoint=project_endpoint, credential=AzureKeyCredential(project_api_key))
 
 list(project_client.agents.list_agents())
 instructions = """
