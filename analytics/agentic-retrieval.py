@@ -1,9 +1,10 @@
 #!/usr/bin/python
 from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.ai.agents import AgentsClient
 from azure.core.credentials import AzureKeyCredential
+from azure.ai.projects import AIProjectClient
 import os
-
 load_dotenv(override=True)
 
 project_endpoint = os.environ["AZURE_PROJECT_ENDPOINT"]
@@ -21,129 +22,98 @@ azure_openai_gpt_deployment = os.getenv("AZURE_OPENAI_GPT_DEPLOYMENT", "gpt-4o-m
 azure_openai_gpt_model = os.getenv("AZURE_OPENAI_GPT_MODEL", "gpt-4o-mini")
 azure_openai_embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002")
 azure_openai_embedding_model = os.getenv("AZURE_OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")
-agent_name = os.getenv("AZURE_SEARCH_AGENT_NAME", "agent01")
-print(f"Agent Name={agent_name}")
+chat_agent_name = os.getenv("AZURE_CHAT_AGENT_NAME", "chat-agent-in-a-team")
+search_agent_name = os.getenv("AZURE_SEARCH_AGENT_NAME", "search-agent-in-a-team")
+print(f"Agent Name={search_agent_name}")
 print(f"Index Name={index_name}")
 api_version = "2025-05-01-Preview"
 agent_max_output_tokens=10000
 
 from azure.search.documents.indexes.models import KnowledgeAgent, KnowledgeAgentAzureOpenAIModel, KnowledgeAgentTargetIndex, KnowledgeAgentRequestLimits, AzureOpenAIVectorizerParameters
 from azure.search.documents.indexes import SearchIndexClient
-
-agent = KnowledgeAgent(
-    name=agent_name,
-    models=[
-        KnowledgeAgentAzureOpenAIModel(
+index_client = SearchIndexClient(endpoint=search_endpoint, credential=AzureKeyCredential(search_api_key))  
+agent = index_client.get_agent(search_agent_name)
+if  agent is None:
+    print("no agent found")
+    model =  KnowledgeAgentAzureOpenAIModel( 
             azure_open_ai_parameters=AzureOpenAIVectorizerParameters(
-                resource_url=azure_openai_endpoint,
-                deployment_name=azure_openai_gpt_deployment,
-                model_name=azure_openai_gpt_model
-            )
+                resource_url=azure_openai_endpoint, 
+                deployment_name=azure_openai_gpt_deployment, 
+                model_name=azure_openai_gpt_model,
+                api_key = azure_openai_api_key                 
+            ) 
         )
-    ],
-    target_indexes=[
-        KnowledgeAgentTargetIndex(
-            index_name=index_name,
-            default_reranker_threshold=2.5
-        )
-    ],
-    request_limits=KnowledgeAgentRequestLimits(
-        max_output_size=10000
+    agent = KnowledgeAgent( 
+        name=search_agent_name, 
+        models=[ 
+            model
+        ], 
+        target_indexes=[ 
+            KnowledgeAgentTargetIndex( 
+                index_name=index_name, 
+                default_include_reference_source_data=True, 
+                default_reranker_threshold=2.5 
+            ) 
+        ], 
+        request_limits=KnowledgeAgentRequestLimits( 
+            max_output_size=10000 
+        ) 
     )
-)
+    r = index_client.create_or_update_agent(agent=agent) 
+    print(f"AI Knowledge agent '{search_agent_name}' created or updated successfully: {r}")     
+print(agent) 
 
-index_client = SearchIndexClient(endpoint=search_endpoint, credential=AzureKeyCredential(search_api_key))
-index_client.create_or_update_agent(agent)
-print(f"Knowledge agent '{agent_name}' created or updated successfully")
+instructions = ["""
+You are an AI assistant that answers questions about the stored and indexed drone images and objects in search index index02.
+The data source is an Azure AI Search resource where the schema has JSON description field, a vector field and an id field and this id field must be cited in your answer.
+If you do not find a match for the query, respond with "I don't know", otherwise cite references with the value of the id field.
+"""]
+messages = [
+    {
+        "role":"system",
+        "content": instructions
+    }
+]
 
-from azure.ai.projects import AIProjectClient
 
-project_client = AIProjectClient(endpoint=project_endpoint, credential=AzureKeyCredential(project_api_key))
-
-list(project_client.agents.list_agents())
-instructions = """
-A Q&A agent that can answer questions about the drone images stored in Azure AI Search.
-Sources have a JSON description and vector format with a ref_id that must be cited in the answer.
-If you do not have the answer, respond with "I don't know".
-"""
-agent = project_client.agents.create_agent(
-    model=agent_model,
-    name=agent_name,
-    instructions=instructions
-)
-
-print(f"AI agent '{agent_name}' created or updated successfully")
 from azure.ai.agents.models import FunctionTool, ToolSet, ListSortOrder
-
 from azure.search.documents.agent import KnowledgeAgentRetrievalClient
 from azure.search.documents.agent.models import KnowledgeAgentRetrievalRequest, KnowledgeAgentMessage, KnowledgeAgentMessageTextContent, KnowledgeAgentIndexParams
 
-agent_client = KnowledgeAgentRetrievalClient(endpoint=search_endpoint, agent_name=agent_name, credential=credential)
-
-thread = project_client.agents.threads.create()
-retrieval_results = {}
-
-def agentic_retrieval() -> str:
-    """
-        Searches drone images about objects detected and their facts.
-        The returned string is in a JSON format that contains the reference id.
-        Be sure to use the same format in your agent's response
-        You must refer to references by id number
-    """
-    # Take the last 5 messages in the conversation
-    messages = project_client.agents.messages.list(thread.id, limit=5, order=ListSortOrder.DESCENDING)
-    # Reverse the order so the most recent message is last
-    messages = list(messages)
-    messages.reverse()
-    retrieval_result = agent_client.retrieve(
-        retrieval_request=KnowledgeAgentRetrievalRequest(
-            messages=[KnowledgeAgentMessage(role=msg["role"], content=[KnowledgeAgentMessageTextContent(text=msg.content[0].text)]) for msg in messages if msg["role"] != "system"],
-            target_index_params=[KnowledgeAgentIndexParams(index_name=index_name, reranker_threshold=2.5)]
-        )
+agent_client = KnowledgeAgentRetrievalClient(endpoint=search_endpoint, agent_name=search_agent_name, credential=AzureKeyCredential(search_api_key))
+# query_text = "How many parking lots are empty when compared to all the parking lots?" 
+query_text = "How many red cars can be found near the building with a roof that has a circular structure?"
+messages.append({
+    "role": "user",
+    "content": query_text
+})
+# print(agent_client)
+print([msg["content"] for msg in messages if msg["role"] != "system"])
+retrieval_result = agent_client.retrieve(
+    retrieval_request=KnowledgeAgentRetrievalRequest(
+        messages=[KnowledgeAgentMessage(role=msg["role"], content=[KnowledgeAgentMessageTextContent(text=msg["content"])]) for msg in messages if msg["role"] != "system"],
+        target_index_params=[KnowledgeAgentIndexParams(index_name=index_name, reranker_threshold=2.5, include_reference_source_data=True)] # add filter_add_on here
     )
-
-    # Associate the retrieval results with the last message in the conversation
-    last_message = messages[-1]
-    retrieval_results[last_message.id] = retrieval_result
-
-    # Return the grounding response to the agent
-    return retrieval_result.response[0].content[0].text
-
-# https://learn.microsoft.com/en-us/azure/ai-services/agents/how-to/tools/function-calling
-functions = FunctionTool({ agentic_retrieval })
-toolset = ToolSet()
-toolset.add(functions)
-project_client.agents.enable_auto_function_calls(toolset)
-
-from azure.ai.agents.models import AgentsNamedToolChoice, AgentsNamedToolChoiceType, FunctionName
-
-message = project_client.agents.messages.create(
-    thread_id=thread.id,
-    role="user",
-    content="""
-        How many parking lots are empty when compared to all the parking lots?
-        How many red cars could be found as parked?
-    """
 )
-
-run = project_client.agents.runs.create_and_process(
-    thread_id=thread.id,
-    agent_id=agent.id,
-    tool_choice=AgentsNamedToolChoice(type=AgentsNamedToolChoiceType.FUNCTION, function=FunctionName(name="agentic_retrieval")),
-    toolset=toolset)
-if run.status == "failed":
-    raise RuntimeError(f"Run failed: {run.last_error}")
-output = project_client.agents.messages.get_last_message_text_by_role(thread_id=thread.id, role="assistant").text.value
-
-print("Agent response:", output.replace(".", "\n"))
-
-import json
-
-retrieval_result = retrieval_results.get(message.id)
-if retrieval_result is None:
-    raise RuntimeError(f"No retrieval results found for message {message.id}")
-
-print("Retrieval activity")
-print(json.dumps([activity.as_dict() for activity in retrieval_result.activity], indent=2))
-print("Retrieval results")
-print(json.dumps([reference.as_dict() for reference in retrieval_result.references], indent=2))
+print(f"Result={retrieval_result.response[0].content[0].text}")
+"""
+response = retrieval_result.response[0].content[0].text
+print(response)
+messages.append({
+    "role": "assistant",
+    "content": response
+})
+print("References List:")
+print([r.as_dict() for r in retrieval_result.references])
+"""
+"""
+Agent Name=search-agent-in-a-team
+Index Name=index00
+{'additional_properties': {}, 'name': 'search-agent-in-a-team', 'models': [<azure.search.documents.indexes._generated.models._models_py3.KnowledgeAgentAzureOpenAIModel object at 0x000001AF20311160>], 'target_indexes': [<azure.search.documents.indexes._generated.models._models_py3.KnowledgeAgentTargetIndex object at 0x000001AF20311A90>], 'request_limits': <azure.search.documents.indexes._generated.models._models_py3.KnowledgeAgentRequestLimits object at 0x000001AF203117F0>, 'e_tag': None, 'encryption_key': None, 'description': None}
+search-agent-in-a-team:[<azure.search.documents.indexes._generated.models._models_py3.KnowledgeAgentAzureOpenAIModel object at 0x000001AF21517750>]
+<KnowledgeAgentRetrievalClient [endpoint='https://srch-vision-01.search.windows.net', agent='search-agent-in-a-team']>
+['How many red cars can be found?']
+[]
+References List:
+[]
+"""

@@ -26,16 +26,14 @@ vision_api_version = os.getenv("AZURE_AI_VISION_API_VERSION")
 vision_region = os.getenv("AZURE_AI_VISION_REGION")
 vision_endpoint =  os.getenv("AZURE_AI_VISION_ENDPOINT")
 credential = DefaultAzureCredential()
-#search_credential = AzureKeyCredential(search_api_key)
 vision_credential = AzureKeyCredential(vision_api_key)
 
 # Initialize Azure clients
-#vision_client = VisionClient(endpoint=vision_endpoint, credential=AzureKeyCredential(vision_api_key))
 search_client = SearchClient(endpoint=search_endpoint, index_name=index_name, credential=AzureKeyCredential(search_api_key))
 analysis_client = ImageAnalysisClient(vision_endpoint, vision_credential)
 
 # Define SAS URL template
-sas_template = "https://saravinoteblogs.blob.core.windows.net/playground/vision/main/main/{file}.jpg?sp=rle&st=2025-05-17T02:49:13Z&se=2025-05-31T10:49:13Z&spr=https&sv=2024-11-04&sr=d&sig=GqhakFHijZWlIUTsRvaVWIqA2EHA70tzaYMDK%2BhC31A%3D&sdd=3"
+sas_template = os.getenv("AZURE_SOURCE_SAS_URI")
 
 # Process images in batches of 10
 batch_size = 10
@@ -72,6 +70,7 @@ def vectorize_image(image_path, key, region):
             result = response.json()
             # The vector is in the 'vector' field of the response
             vector = result.get("vector")
+            
             # print("Vector embedding:", vector)
             return vector
         else:
@@ -82,3 +81,37 @@ def vectorize_image(image_path, key, region):
     except (requests.exceptions.Timeout, http.client.HTTPException) as e:
         print(f"Timeout/Error for {image_path[74:80]}. Retrying...")
         raise
+
+@retry(stop=stop_after_attempt(5), wait=wait_fixed(60))
+def analyze_image(client, image_url):
+    try:
+        # Define all available visual features for analysis
+        features = [
+            VisualFeatures.CAPTION,
+            VisualFeatures.TAGS,
+            VisualFeatures.OBJECTS,
+            VisualFeatures.READ,
+            VisualFeatures.SMART_CROPS,
+            VisualFeatures.DENSE_CAPTIONS,
+            VisualFeatures.PEOPLE
+        ]
+        
+        # Analyze the image from the SAS URL
+        result = client.analyze_from_url(
+            image_url=image_url,
+            visual_features=features,
+            gender_neutral_caption=True        )
+        # Explicitly cast to ImageAnalysisResult (for clarity)
+        result: ImageAnalysisResult = result
+        if result is not None:
+            captions = []
+            captions += [ f"{result.caption.text}" if result.caption is not None else "No Caption"]
+            captions += [ f"{caption.text}" for caption in result.dense_captions.list if result.dense_captions is not None]
+            # Enhance result
+            result.description = ",".join(captions)
+            description =  pformat(result.__dict__, depth=4, compact=False)
+            return description
+    except HttpResponseError as e:
+        print(str(e))
+        raise
+    return "No description"

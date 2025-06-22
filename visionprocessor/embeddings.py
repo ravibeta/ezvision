@@ -15,6 +15,7 @@ import json
 import requests
 import http.client, urllib.parse
 import os
+import numpy as np
 
 load_dotenv()  
 search_endpoint = os.getenv("AZURE_SEARCH_SERVICE_ENDPOINT")  
@@ -35,11 +36,11 @@ search_client = SearchClient(endpoint=search_endpoint, index_name=index_name, cr
 analysis_client = ImageAnalysisClient(vision_endpoint, vision_credential)
 
 # Define SAS URL template
-sas_template = os.getenv("AZURE_SA_CONTAINER_SASURL")
+sas_template = os.getenv("AZURE_SOURCE_SAS_URI")
 
 # Process images in batches of 10
 batch_size = 10
-initial_start = 2040
+initial_start = 1
 total_images = 17853  # Adjust this as needed
 
 
@@ -72,11 +73,12 @@ def vectorize_image(image_path, key, region):
             result = response.json()
             # The vector is in the 'vector' field of the response
             vector = result.get("vector")
+            vector = np.pad(vector, (0, 1536 - len(vector)), mode='constant')
             # print("Vector embedding:", vector)
             return vector
         else:
             print("Error:", response.status_code, response.text)
-            vector = [0.0] * 1024
+            vector = [0.0] * 1536
             raise Exception(f"Error vectorizing image {image_path[74:80]}")
 
     except (requests.exceptions.Timeout, http.client.HTTPException) as e:
@@ -127,7 +129,7 @@ for batch_start in range(initial_start, total_images + 1, batch_size):
     batch_end = min(batch_start + batch_size, total_images + 1)
     for i in range(batch_start, batch_end):
         file_name = f"{i:06}"
-        blob_url = sas_template.format(file=file_name)
+        blob_url = sas_template.format(source_file=file_name)
 
         try:
             vector = vectorize_image(blob_url, vision_api_key, "eastus")
@@ -142,7 +144,6 @@ for batch_start in range(initial_start, total_images + 1, batch_size):
     # print(f"Vectorization complete for images {batch_start} to {min(batch_start + batch_size - 1, total_images)}")
     # Upload batch to Azure AI Search
     if len(documents) > 0:
-        # [pprint(document, depth=4, compact=False) for document in documents]
         try:
             search_client.upload_documents(documents=documents)
             print(f"Uploaded {len(documents)} images {batch_start} to {batch_end} to {index_name}.")
