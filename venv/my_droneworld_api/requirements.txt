@@ -1,0 +1,6 @@
+Django>=3.2
+djangorestframework==3.16.0
+azure-storage-blob==12.25.1
+django-storages
+azure-functions==1.23.0
+django-cors-headers==4.7.0
