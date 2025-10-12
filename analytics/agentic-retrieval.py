@@ -32,6 +32,12 @@ agent_max_output_tokens=10000
 from azure.search.documents.indexes.models import KnowledgeAgent, KnowledgeAgentAzureOpenAIModel, KnowledgeAgentTargetIndex, KnowledgeAgentRequestLimits, AzureOpenAIVectorizerParameters
 from azure.search.documents.indexes import SearchIndexClient
 index_client = SearchIndexClient(endpoint=search_endpoint, credential=AzureKeyCredential(search_api_key))  
+index_client.close()
+index_client = SearchIndexClient(endpoint=search_endpoint, credential=AzureKeyCredential(search_api_key))  
+
+for index_agent in index_client.list_agents():
+    print(index_agent.name)
+    # index_agent.clear()
 agent = index_client.get_agent(search_agent_name)
 if  agent is None:
     print("no agent found")
@@ -83,6 +89,18 @@ from azure.search.documents.agent.models import KnowledgeAgentRetrievalRequest, 
 agent_client = KnowledgeAgentRetrievalClient(endpoint=search_endpoint, agent_name=search_agent_name, credential=AzureKeyCredential(search_api_key))
 # query_text = "How many parking lots are empty when compared to all the parking lots?" 
 query_text = "How many red cars can be found near the building with a roof that has a circular structure?"
+query_text = "How many parking can be found near the building with a roof that has a circular structure?"
+query_text = "How far is a split in the road from the building with a roof that has a circular structure?"
+query_text = "Is there a green car?"
+query_text = "How far is a skyscraper from the lake?"
+query_text = "Find the image with the tallest building among all."
+query_text = "Which is the tallest building among all the buildings in images?"
+query_text = "List all types of vehicles found on the roads or parking lots from the images"
+query_text = "How many red cars can be found near the building with a roof that has a circular structure?"
+query_text = "How many different colors of cars can be found on the roads near the building with a roof that has a circular structure?"
+query_text = "How many storeys are there in buildings close to parking lots?"
+query_text = "Is there a parking lot building with cars on the roof?"
+query_text = "Are there triangular buildings for parking?"
 messages.append({
     "role": "user",
     "content": query_text
@@ -95,6 +113,7 @@ retrieval_result = agent_client.retrieve(
         target_index_params=[KnowledgeAgentIndexParams(index_name=index_name, reranker_threshold=2.5, include_reference_source_data=True)] # add filter_add_on here
     )
 )
+# print(f"Response={retrieval_result.response[0].content[0]}")
 print(f"Result={retrieval_result.response[0].content[0].text}")
 """
 response = retrieval_result.response[0].content[0].text

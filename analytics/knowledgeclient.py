@@ -42,29 +42,6 @@ agent_name = os.getenv("AZURE_SEARCH_AGENT_NAME", "objects-search-agent")
 api_version = "2025-05-01-Preview"
 agent_max_output_tokens=10000
 
-"""
-agent=KnowledgeAgent( 
-    name=agent_name, 
-    target_indexes=[ 
-        KnowledgeAgentTargetIndex( 
-            index_name=index_name, default_include_reference_source_data=True, 
-            default_reranker_threshold=2.5 
-        ) 
-    ], 
-    models=[ 
-        KnowledgeAgentAzureOpenAIModel( 
-            azure_open_ai_parameters=AzureOpenAIVectorizerParameters( 
-                resource_url=azure_openai_endpoint, 
-                deployment_name=azure_openai_gpt_deployment, 
-                model_name=azure_openai_gpt_model, 
-            ) 
-        ) 
-    ], 
-    request_limits=KnowledgeAgentRequestLimits( 
-        max_output_size=agent_max_output_tokens 
-    ) 
-)
-"""
 agents_client = AgentsClient(endpoint=project_endpoint, credential=DefaultAzureCredential())
 index_client = SearchIndexClient(endpoint=search_endpoint, credential=AzureKeyCredential(search_api_key)) 
 instructions = """
@@ -85,16 +62,6 @@ search_tool = AzureAISearchTool(
     filter="",  # Optional filter expression
     top_k=3  # Number of results to return
 )
-# ai_search_tool = AzureSearchToolset(search_endpoint, index_name, search_api_key)
-
-# agents_client.create_agent(agent) 
-# agent = agents_client.create_agent(
-    # model=agent_model, # azure_openai_embedding_model,
-    # name=agent_name,
-    # instructions=instructions,
-    # tools=search_tool.definitions,
-    # tool_resources=search_tool.resources
-# )
 existing_agents = agents_client.list_agents()
 print(f"Agents other than {agent_name}:")
 print(",".join([f"{agent.name}:{agent.model}" for agent in existing_agents]))
@@ -130,56 +97,3 @@ messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.
 for message in messages:
     print(",".join([key for key in message.keys()]))
     print(f"Role: {message.role}, Content: {message.content}, Metadata: {message.metadata}")
-
-
-# messages = [
-    # {
-        # "role": "system",
-        # "content": instructions
-    # }
-# ] 
-
-# from azure.search.documents.agent import KnowledgeAgentRetrievalClient 
-# from azure.search.documents.agent.models import KnowledgeAgentRetrievalRequest, KnowledgeAgentMessage, KnowledgeAgentMessageTextContent, KnowledgeAgentIndexParams 
-
-# agent_client = KnowledgeAgentRetrievalClient(endpoint=search_endpoint, agent_name=agent_name, credential=credential)
-
-# messages.append({ 
-  # "role": "user", 
-  # "content": 
-# """ 
-# How many red cars could be found? 
-# """ 
-
-# }) 
-
-# retrieval_result = agent_client.knowledge_retrieval.retrieve( 
-   # messages[KnowledgeAgentMessage( 
-        # role=msgp["role"], 
-        # content=[KnowledgeAgentMessageTextContent(text=msg["content"])]) 
-        # for msg in messages if msg["role"] != "system"], 
-        # Target_index_params=[KnowedgeAgentIndexParams(index_name=index_name, reranker_threshold=3, include_reference_source_data=True)], 
-   # )
-# ) 
-# retrieval_result = agents_client.retrieve(
-    # retrieval_request=KnowledgeAgentRetrievalRequest(
-        # messages=[KnowledgeAgentMessage(role=msg["role"], content=[KnowledgeAgentMessageTextContent(text=msg["content"])]) for msg in messages if msg["role"] != "system"],
-        # target_index_params=[KnowledgeAgentIndexParams(index_name=index_name, reranker_threshold=2.5)]
-    # )
-# )
-
-# messages.append({ 
-   # "role": "assistant", 
-   # "content": retrieval_result.response[0].content[0].text 
-# }) 
-
-# print(messages)
-# import textwrap
-
-# print("Response")
-# print(textwrap.fill(retrieval_result.response[0].content[0].text, width=120))
-# import json
-# print("Activity")
-# print(json.dumps([a.as_dict() for a in retrieval_result.activity], indent=2))
-# print("Results")
-# print(json.dumps([r.as_dict() for r in retrieval_result.references], indent=2))

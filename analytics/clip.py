@@ -41,6 +41,8 @@ destination_client = SearchClient(
     index_name=dest_index_name,
     credential=AzureKeyCredential(search_api_key)
 )
+
+
 vision_credential = AzureKeyCredential(vision_api_key)
 analysis_client = ImageAnalysisClient(vision_endpoint, vision_credential)
 

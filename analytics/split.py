@@ -21,18 +21,21 @@ duration = os.getenv("AZURE_VIDEO_DURATION_IN_SECONDS", "307")
 video_sas_url=os.getenv("AZURE_VIDEO_SAS_URL")
 local_only = True
 
-def get_image_blob_url(video_url, frame_number):
+def get_image_blob_url(video_url, frame_number, prefix='frame', include_name=False):
     # Parse the original video URL to get account, container, and path
     parsed = urlparse(video_url)
     path_parts = parsed.path.split('/')
+    blob_name = path_parts[-1].split('.')[0]
     container = path_parts[1]
     blob_path = '/'.join(path_parts[2:])
     # Remove the file name from the blob path
     blob_dir = '/'.join(blob_path.split('/')[:-1])
     if blob_dir == "" or blob_dir == None:
         blob_dir = "output"
+    if include_name:
+        prefix += f"{blob_name}-{frame}"
     # Create image path
-    image_path = f"{blob_dir}/images/frame{frame_number}.jpg"
+    image_path = f"{blob_dir}/images/{prefix}{frame_number}.jpg"
     # Rebuild the base URL (without SAS token)
     base_url = f"{parsed.scheme}://{parsed.netloc}/{container}/{image_path}"
     # Add the SAS token if present
