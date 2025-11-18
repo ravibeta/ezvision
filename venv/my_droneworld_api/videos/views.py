@@ -16,6 +16,17 @@ class VideoEntityViewSet(viewsets.ModelViewSet):
     queryset = VideoEntity.objects.all()
     serializer_class = VideoEntitySerializer
 
+    def list(self, request, *args, **kwargs):
+        account_id = request.data.get("account_id")
+        
+        if account_id:
+            videos = VideoEntity.objects.filter(account_id=account_id)
+        else:
+            videos = VideoEntity.objects.none()
+
+        serializer = self.get_serializer(videos, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
     def create(self, request, *args, **kwargs):
         account_id = request.data.get("account_id")
         # Create a new instance and use custom create_video logic
