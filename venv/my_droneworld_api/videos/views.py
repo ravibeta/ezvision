@@ -181,10 +181,11 @@ class ChatAPIView(APIView):
             # print(f"sas_url_template={sas_url_template}")
             highest = get_uploaded_frames(video_sas_url, account_id = account_id, video_id = video_id)
             frames = []
-            if highest and highest != 0:
+            if highest:
                 print(f"highest={highest}")
                 frames = [str(0), str(int(highest/2)), str(highest-1)]
                 frames +=  [str(num) for num in list(range(17))]
+            print(f"frames={frames}, frames_list={frames_list}")
             if frames_list:
                 frames = frames_list.strip(',').split(',')
             print(frames)

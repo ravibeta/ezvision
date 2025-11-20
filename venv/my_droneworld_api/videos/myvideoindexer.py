@@ -363,16 +363,37 @@ def extract_and_upload_frames(video_sas_url, video_id = None):
     return frame_number
     
 def get_uploaded_frames(video_sas_url, account_id = None, video_id = None):
+    blob_service_client = None
+    account_name = settings.ACCOUNT_NAME
+    account_url = f'https://{account_name}.blob.core.windows.net'
+    account_key = settings.AZURE_ACCOUNT_KEY
+    container = settings.CONTAINER_NAME
+    try:
+        from azure.storage.blob import BlobServiceClient
+        blob_service_client = BlobServiceClient(
+            account_url=account_url,
+            credential=account_key
+        )
+    except Exception as e:
+       print(e)
+       return 0
     for frame_number in range(9999):
         try:
-            image_url = get_image_blob_url(video_sas_url, frame_number, video_id=video_id).strip('"')
-            if BlobClient.from_blob_url(image_url).exists():
-               continue
+            if blob_service_client:
+                image_url = get_image_blob_url(video_sas_url, frame_number, video_id=video_id).strip('"')
+                prefix=f"{account_url}/{container}/"
+                blob_name=image_url.split('?')[0].replace(prefix,"")
+                # print(f"blob_name={blob_name}")
+                blob_client = blob_service_client.get_blob_client(container=container, blob=blob_name) 
+                if blob_client.exists():
+                # image_url = get_image_blob_url(video_sas_url, frame_number, video_id=video_id).strip('"')
+                # if BlobClient.from_blob_url(image_url).exists():
+                   continue
         except Exception as e:
             print(e)
             break
         # print(image_url)
-        return frame_number
+    return frame_number
 
     
 def vectorize_extracted_frames(video_sas_url, frame_number = None, video_id = None):
