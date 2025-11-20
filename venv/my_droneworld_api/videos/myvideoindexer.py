@@ -292,13 +292,14 @@ def get_image_blob_url(video_url, frame_number, folder='images', prefix='frame',
     # print(f"parsed={parsed},path_parts={path_parts},blob_name={blob_name},container={container},blob_path={blob_path},blob_dir={blob_dir}")
     if blob_dir == "" or blob_dir == None:
         blob_dir = "output"
+    new_path = f"{blob_dir}/{folder}"
     if video_id:
-        blob_dir += "/" + str(video_id)
+        new_path += "/" + str(video_id)
     # Create image path
     if include_name:
         prefix += blob_name
     numeral=str(frame_number)
-    image_path = f"{blob_dir}/{folder}/{prefix}{numeral}.jpg"
+    image_path = f"{new_path}/{prefix}{numeral}.jpg"
     # print(f"image_path={image_path}")
     
     # Rebuild the base URL (without SAS token)
@@ -385,7 +386,10 @@ def get_uploaded_frames(video_sas_url, account_id = None, video_id = None):
                 blob_name=image_url.split('?')[0].replace(prefix,"")
                 # print(f"blob_name={blob_name}")
                 blob_client = blob_service_client.get_blob_client(container=container, blob=blob_name) 
-                if blob_client.exists():
+                exists = False
+                blob_client.get_blob_properties()
+                exists = True
+                if exists:
                 # image_url = get_image_blob_url(video_sas_url, frame_number, video_id=video_id).strip('"')
                 # if BlobClient.from_blob_url(image_url).exists():
                    continue

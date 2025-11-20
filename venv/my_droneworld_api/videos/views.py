@@ -51,7 +51,7 @@ class VideoEntityViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         # Find the instance to update
         video = self.get_object()
-        print(request.data)
+        # print(request.data)
         update_data = request.data
         video.update_video(**update_data)
         serializer = self.get_serializer(video)
@@ -172,7 +172,7 @@ class ChatAPIView(APIView):
            if not video_id:
               return Response({'text': "Please upload content to analyze.",'imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
            blob_name += f"/{video_id}"
-        print(f"account={account_name}, container={container_name}, folder={folder}, blob={blob_name}, video_id={video_id}")
+        # print(f"account={account_name}, container={container_name}, folder={folder}, blob={blob_name}, video_id={video_id}")
         # account=sadronevideo, container=input, folder=2, blob=2/images/1, video_id=1
         try:
             video_sas_url = VideoEntity.objects.get(pk=video_id).sas_url
@@ -185,10 +185,10 @@ class ChatAPIView(APIView):
                 print(f"highest={highest}")
                 frames = [str(0), str(int(highest/2)), str(highest-1)]
                 frames +=  [str(num) for num in list(range(17))]
-            print(f"frames={frames}, frames_list={frames_list}")
+            # print(f"frames={frames}, frames_list={frames_list}")
             if frames_list:
                 frames = frames_list.strip(',').split(',')
-            print(frames)
+            # print(frames)
             if not frames:
                 return Response({'text': 'Content has not been processed to analyze. Please try again later.','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
             sas_url_template = sas_url_template.replace("frame0", "frame(number)")
