@@ -17,14 +17,27 @@ class VideoEntityViewSet(viewsets.ModelViewSet):
     serializer_class = VideoEntitySerializer
 
     def list(self, request, *args, **kwargs):
-        account_id = request.data.get("account_id")
-        
+        account_id = request.query_params.get("account_id")
         if account_id:
             videos = VideoEntity.objects.filter(account_id=account_id)
         else:
             videos = VideoEntity.objects.none()
-
+        print([video.id for video in videos])
         serializer = self.get_serializer(videos, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+    def retrieve(self, request, *args, **kwargs):
+        account_id = request.query_params.get("account_id")
+        instance = self.get_object()
+
+        if not account_id:
+            raise PermissionDenied("account_id must be provided in request parameters.")
+
+        if str(instance.account_id) != str(account_id):
+            print(f"{account_id} Not Found.")
+            return Response({}, status=status.HTTP_200_OK)
+
+        serializer = self.get_serializer(instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
         
     def create(self, request, *args, **kwargs):
@@ -151,7 +164,13 @@ class ChatAPIView(APIView):
         if video_id:
            blob_name += f"/{video_id}"
         else:
-           video_id =  VideoEntity.objects.filter(account_id=account_id).last().id
+           video_id = None
+           try:
+               video_id =  VideoEntity.objects.filter(account_id=account_id).last().id
+           except:
+               pass
+           if not video_id:
+              return Response({'text': "Please upload content to analyze.",'imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
            blob_name += f"/{video_id}"
         print(f"account={account_name}, container={container_name}, folder={folder}, blob={blob_name}, video_id={video_id}")
         # account=sadronevideo, container=input, folder=2, blob=2/images/1, video_id=1
