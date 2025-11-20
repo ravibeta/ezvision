@@ -176,6 +176,26 @@ class ChatAPIView(APIView):
         # account=sadronevideo, container=input, folder=2, blob=2/images/1, video_id=1
         try:
             video_sas_url = VideoEntity.objects.get(pk=video_id).sas_url
+            blob_service_client = None
+            account_name = settings.ACCOUNT_NAME
+            account_url = f'https://{account_name}.blob.core.windows.net'
+            account_key = settings.AZURE_ACCOUNT_KEY
+            container = settings.CONTAINER_NAME
+            from azure.storage.blob import BlobServiceClient
+            blob_service_client = BlobServiceClient(
+                account_url=account_url,
+                credential=account_key
+            )
+            blob_client = blob_service_client.get_blob_client(container=container, blob="/")
+            from azure.storage.blob import generate_container_sas
+            sas_token = generate_container_sas(
+                account_name=account_name,
+                container_name=container,
+                account_key=settings.AZURE_ACCOUNT_KEY,
+                permission=BlobSasPermissions(read=True, list=True),
+                expiry=datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+            )
+            video_sas_url = video_sas_url.split('?')[0] + "?" + sas_token
             # print(f"video_sas_url={video_sas_url}")
             sas_url_template = get_image_blob_url(video_sas_url, 0, folder='images', prefix='frame', include_name=False, video_id=video_id)
             # print(f"sas_url_template={sas_url_template}")
@@ -191,6 +211,7 @@ class ChatAPIView(APIView):
             # print(frames)
             if not frames:
                 return Response({'text': 'Content has not been processed to analyze. Please try again later.','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
+            # return Response({'text': 'Dummy Response','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)    
             sas_url_template = sas_url_template.replace("frame0", "frame(number)")
             response_text = synthesize_from_agents(query_text, account_id)
             # response_text = knowledge_base_search(query_text, account_id)
