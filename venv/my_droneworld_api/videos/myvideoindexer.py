@@ -289,14 +289,18 @@ def get_image_blob_url(video_url, frame_number, folder='images', prefix='frame',
     blob_path = '/'.join(path_parts[2:])
     # Remove the file name from the blob path
     blob_dir = '/'.join(blob_path.split('/')[:-1])
+    # print(f"parsed={parsed},path_parts={path_parts},blob_name={blob_name},container={container},blob_path={blob_path},blob_dir={blob_dir}")
     if blob_dir == "" or blob_dir == None:
         blob_dir = "output"
     if video_id:
-        blob_dir += "/" + video_id 
+        blob_dir += "/" + str(video_id)
     # Create image path
     if include_name:
         prefix += blob_name
-    image_path = f"{blob_dir}/{folder}/{prefix}{frame_number}.jpg"
+    numeral=str(frame_number)
+    image_path = f"{blob_dir}/{folder}/{prefix}{numeral}.jpg"
+    # print(f"image_path={image_path}")
+    
     # Rebuild the base URL (without SAS token)
     base_url = f"{parsed.scheme}://{parsed.netloc}/{container}/{image_path}"
     # Add the SAS token if present
@@ -360,8 +364,8 @@ def extract_and_upload_frames(video_sas_url, video_id = None):
     
 def get_uploaded_frames(video_sas_url, account_id = None, video_id = None):
     for frame_number in range(9999):
-        image_url = get_image_blob_url(video_sas_url, frame_number, video_id=video_id).strip('"')
         try:
+            image_url = get_image_blob_url(video_sas_url, frame_number, video_id=video_id).strip('"')
             if BlobClient.from_blob_url(image_url).exists():
                continue
         except Exception as e:
@@ -369,28 +373,7 @@ def get_uploaded_frames(video_sas_url, account_id = None, video_id = None):
             break
         # print(image_url)
         return frame_number
-        
-'''
-    from urllib.parse import urlparse, parse_qs, urlunparse
-    parsed_url = urlparse(video_sas_url)
-    account_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-    sas_token = parsed_url.query
-    blob_service_client = BlobServiceClient(account_url=account_url, credential=sas_token)
-    path_parts = parsed_url.path.lstrip('/').split('/')
-    container_name = path_parts[0]
-    blob_path = '/'.join(path_parts[1:len(path_parts)-1])
-    image_folder_prefix = blob_path + f"images/{video_id}/frame"
-    container_client = video_blob_client.get_container_client(container_name)
-    blobs = container_client.list_blobs(name_starts_with=image_folder_prefix)
-    max = 0
-    for blob in blobs:
-        match = re.search(r'frame(\d+)', blob.name)
-        if match:
-            frame_number = int(match.group(1))
-            if frame_number > max:
-               max = frame_number
-    return max
-'''
+
     
 def vectorize_extracted_frames(video_sas_url, frame_number = None, video_id = None):
     # frames = extract_and_upload_frames(video_sas_url)

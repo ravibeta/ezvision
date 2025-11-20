@@ -22,7 +22,7 @@ class VideoEntityViewSet(viewsets.ModelViewSet):
             videos = VideoEntity.objects.filter(account_id=account_id)
         else:
             videos = VideoEntity.objects.none()
-        print([video.id for video in videos])
+        # print([video.id for video in videos])
         serializer = self.get_serializer(videos, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
         
@@ -177,18 +177,19 @@ class ChatAPIView(APIView):
         try:
             video_sas_url = VideoEntity.objects.get(pk=video_id).sas_url
             # print(f"video_sas_url={video_sas_url}")
-            sas_url_template = get_image_blob_url(video_sas_url, 0, folder='images', prefix='frame', include_name=False, video_id=None)
-            print(f"sas_url_template={sas_url_template}")
+            sas_url_template = get_image_blob_url(video_sas_url, 0, folder='images', prefix='frame', include_name=False, video_id=video_id)
+            # print(f"sas_url_template={sas_url_template}")
             highest = get_uploaded_frames(video_sas_url, account_id = account_id, video_id = video_id)
             frames = []
-            if highest:
+            if highest and highest != 0:
                 print(f"highest={highest}")
                 frames = [str(0), str(int(highest/2)), str(highest-1)]
+                frames +=  [str(num) for num in list(range(17))]
             if frames_list:
                 frames = frames_list.strip(',').split(',')
             print(frames)
             if not frames:
-                frames =  [str(num) for num in list(range(20))]
+                return Response({'text': 'Content has not been processed to analyze. Please try again later.','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
             sas_url_template = sas_url_template.replace("frame0", "frame(number)")
             response_text = synthesize_from_agents(query_text, account_id)
             # response_text = knowledge_base_search(query_text, account_id)

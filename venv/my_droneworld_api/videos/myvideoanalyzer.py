@@ -400,6 +400,9 @@ def knowledge_base_search(query_text, account_id):
                 last_text = msg.text_messages[-1]
                 print(f"{msg.role}: {last_text.text.value}")
                 answer = last_text.text.value
+                citations = []
+                for annotation in last_text.text.annotations:
+                    citations += [annotation.url_citation.url]
         print(f"answer={answer}")
         for entry in project_client.agents.list_agents():
             print(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
