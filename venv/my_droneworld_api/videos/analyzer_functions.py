@@ -246,6 +246,7 @@ def ask_perplexity(query_text, account_id = "2", video_id = None, frames_list = 
         )
         blob_client = blob_service_client.get_blob_client(container=container, blob="/")
         from azure.storage.blob import generate_container_sas, BlobSasPermissions
+        import datetime
         sas_token = generate_container_sas(
             account_name=account_name,
             container_name=container,
