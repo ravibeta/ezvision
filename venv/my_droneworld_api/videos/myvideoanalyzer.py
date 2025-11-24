@@ -28,7 +28,8 @@ from azure.ai.agents.models import (
     SubmitToolOutputsAction,
     ToolOutput,
     OpenApiTool,
-    OpenApiConnectionAuthDetails 
+    OpenApiConnectionAuthDetails,
+    RunStepOpenAPIToolCall
 )
 from azure.search.documents.agent import KnowledgeAgentRetrievalClient
 from azure.search.documents.agent.models import KnowledgeAgentRetrievalRequest, KnowledgeAgentMessage, KnowledgeAgentMessageTextContent # , KnowledgeAgentIndexParams
@@ -655,7 +656,6 @@ def run_analyzer_tools(query_text, account_id):
 def synthesize_from_chat_agent(query_text, account_id):
     # Query the Search-backed agent
     knowledge_search_answer = knowledge_base_search(query_text, account_id)
-
     delegated_answer = run_analyzer_tools(query_text, account_id)
     # Synthesize by prompting the composite agent
     synthesis_response = f"""
@@ -680,7 +680,7 @@ def synthesize_from_chat_agent(query_text, account_id):
         if entity.name == chat_agent_name:  
             agent = entity
     with agents_client:
-        # agent = agents_client.get_agent("asst_v2Hj4CJ5wEW2gqGwG44YtbD4") # chat_agent_name
+        # agent = agents_client.get_agent("asst_lsH8uwS4hrg4v1lRpXm6sdtR") # chat_agent_name
         if  agent is None:
             print("no agent found")
             api = OpenApiTool(name=chat_agent_name,description="consolidator of answers", spec={}, auth=OpenApiConnectionAuthDetails())
@@ -725,11 +725,12 @@ def synthesize_from_chat_agent(query_text, account_id):
 
                 tool_outputs = []
                 for tool_call in tool_calls:
-                    if isinstance(tool_call, RequiredFunctionToolCall):
-                        #print("Is an instance of RequiredFunctionToolCall")
+                    print(f"tool_call={tool_call}")
+                    if isinstance(tool_call, RunStepOpenAPIToolCall):
+                        #print("Is an instance of RunStepOpenAPIToolCall")
                         try:
                             #print(f"Executing tool call: {tool_call}")
-                            output = functions.execute(tool_call)
+                            output = api.execute(tool_call)
                             print(f"Output={output}")
                             answer = output
                             tool_outputs.append(
@@ -760,14 +761,12 @@ def synthesize_from_chat_agent(query_text, account_id):
         # print("Deleted agent")
 
         # Fetch and log all messages
-        """
         messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
         for msg in messages:
             if msg.text_messages:
                 last_text = msg.text_messages[-1]
                 print(f"{msg.role}: {last_text.text.value}")
-                return last_text.text.value
-        """
+                answer = last_text.text.value
         # print(f"answer={answer}")
     if not answer:
         answer = synthesis_response
