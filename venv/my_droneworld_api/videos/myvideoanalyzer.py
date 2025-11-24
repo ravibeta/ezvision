@@ -27,6 +27,8 @@ from azure.ai.agents.models import (
     RunStepAzureAISearchToolCall,
     SubmitToolOutputsAction,
     ToolOutput,
+    OpenApiTool,
+    OpenApiConnectionAuthDetails 
 )
 from azure.search.documents.agent import KnowledgeAgentRetrievalClient
 from azure.search.documents.agent.models import KnowledgeAgentRetrievalRequest, KnowledgeAgentMessage, KnowledgeAgentMessageTextContent # , KnowledgeAgentIndexParams
@@ -74,6 +76,7 @@ azure_openai_embedding_model = settings.AZURE_OPENAI_EMBEDDING_MODEL
 fn_agent_name = settings.AZURE_FN_AGENT_NAME
 chat_agent_name = settings.AZURE_CHAT_AGENT_NAME
 search_agent_name = settings.AZURE_SEARCH_AGENT_NAME
+tool_agent_name = settings.AZURE_TOOL_AGENT_NAME
 
 perplexity_api_key = settings.PERPLEXITY_CHAT_API_KEY
 perplexity_api_url = settings.PERPLEXITY_CHAT_API_URL
@@ -540,6 +543,235 @@ def run_function_tools(query_text, account_id):
         
 
 
+def run_analyzer_tools(query_text, account_id):
+    answer = None
+    project_client = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential()) 
+    agents_client = AgentsClient(
+        endpoint=project_endpoint,
+        credential=DefaultAzureCredential(),
+    )
+    from .analyzer_functions import analyzer_functions
+
+    # Initialize function tool with user functions
+    functions = FunctionTool(functions=analyzer_functions)
+    instructions = "You are a drone aerial image analytics assistant that answers the question by finding a suitable function, passing the question to the function, evaluating it and relaying the response from the function. If you can't find a suitable function, default to the ask_perplexity function included in your tools."
+    # query_text = f"How many objects given by its image URI {object_uri} are found in the image given by its image URI {scene_uri}?"
+    agent = None
+    for entity in agents_client.list_agents():
+        if entity.name == tool_agent_name:  
+            agent = entity
+    with agents_client:
+        # agent = agents_client.get_agent("asst_v2Hj4CJ5wEW2gqGwG44YtbD4") # tool_agent_name
+        if  agent is None:
+            print("no agent found")
+            # 
+            # Create an agent and run user's request with function calls
+            # agent = agents_client.get_agent(agent_id="asst_qyMFcz1BnU0BS0QUmhxAAyFk")
+            # """
+            agent = agents_client.create_agent(
+                model=agent_model,
+                name=tool_agent_name,
+                instructions=instructions,
+                tools=functions.definitions,
+                tool_resources=functions.resources,
+                top_p=1
+            )
+            # """
+            #print(f"Created agent, ID: {agent.id}")
+        print(f"Agent found, ID: {agent.id}") 
+        thread = agents_client.threads.create()
+        print(f"Created thread, ID: {thread.id}")
+
+        message = agents_client.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=query_text,
+        )
+        #print(f"Created message, ID: {message.id}")
+
+        run = agents_client.runs.create(thread_id=thread.id, agent_id=agent.id)
+        #print(f"Created run, ID: {run.id}")
+
+        while run.status in ["queued", "in_progress", "requires_action"]:
+            time.sleep(1)
+            run = agents_client.runs.get(thread_id=thread.id, run_id=run.id)
+
+            if run.status == "requires_action" and isinstance(run.required_action, SubmitToolOutputsAction):
+                tool_calls = run.required_action.submit_tool_outputs.tool_calls
+                if not tool_calls:
+                    print("No tool calls provided - cancelling run")
+                    agents_client.runs.cancel(thread_id=thread.id, run_id=run.id)
+                    break
+
+                tool_outputs = []
+                for tool_call in tool_calls:
+                    if isinstance(tool_call, RequiredFunctionToolCall):
+                        #print("Is an instance of RequiredFunctionToolCall")
+                        try:
+                            #print(f"Executing tool call: {tool_call}")
+                            output = functions.execute(tool_call)
+                            print(f"Output={output}")
+                            answer = output
+                            tool_outputs.append(
+                                ToolOutput(
+                                    tool_call_id=tool_call.id,
+                                    output=output,
+                                )
+                            )
+                        except Exception as e:
+                            print(f"Error executing tool_call {tool_call.id}: {e}")
+                    else:
+                        print(f"{tool_call} skipped.")
+
+                print(f"Tool outputs: {tool_outputs}")
+                if tool_outputs:
+                    agents_client.runs.submit_tool_outputs(thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs)
+                else:
+                    print(f"No tool output.")
+            else:
+                print(f"Waiting: {run}")
+
+            print(f"Current run status: {run.status}")
+
+        print(f"Run completed with status: {run.status} and details {run}")
+
+        # Delete the agent when done
+        # agents_client.delete_agent(agent.id)
+        # print("Deleted agent")
+
+        # Fetch and log all messages
+        """
+        messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
+        for msg in messages:
+            if msg.text_messages:
+                last_text = msg.text_messages[-1]
+                print(f"{msg.role}: {last_text.text.value}")
+                return last_text.text.value
+        """
+        # print(f"answer={answer}")
+        return answer
+
+
+def synthesize_from_chat_agent(query_text, account_id):
+    # Query the Search-backed agent
+    knowledge_search_answer = knowledge_base_search(query_text, account_id)
+
+    delegated_answer = run_analyzer_tools(query_text, account_id)
+    # Synthesize by prompting the composite agent
+    synthesis_response = f"""
+    [User]: {query_text}
+    
+    [Search Agent Output]:
+    {knowledge_search_answer}
+
+    [Connected Agent Output]:
+    {delegated_answer}
+    """
+    # chat_agent_name
+    answer = None
+    project_client = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential()) 
+    agents_client = AgentsClient(
+        endpoint=project_endpoint,
+        credential=DefaultAzureCredential(),
+    )
+    instructions = "You are an aerial drone image analyst who collects answers provided by other agents and rewrites their answers in a smooth narrative without bullet points and attempts to fulfil the user's question in one attempt. Please refrain from asking user clarifying questions or seeking directions to proceed with further investigation. You are only consolidating and rephrasing the answers that other agents have responded to the user's question."
+    agent = None
+    for entity in agents_client.list_agents():
+        if entity.name == chat_agent_name:  
+            agent = entity
+    with agents_client:
+        # agent = agents_client.get_agent("asst_v2Hj4CJ5wEW2gqGwG44YtbD4") # chat_agent_name
+        if  agent is None:
+            print("no agent found")
+            api = OpenApiTool(name=chat_agent_name,description="consolidator of answers", spec={}, auth=OpenApiConnectionAuthDetails())
+            # 
+            # Create an agent and run user's request with function calls
+            # agent = agents_client.get_agent(agent_id="asst_qyMFcz1BnU0BS0QUmhxAAyFk")
+            # """
+            agent = agents_client.create_agent(
+                model=agent_model,
+                name=chat_agent_name,
+                instructions=instructions,
+                tools=api.defintions,
+                tool_resources=api.resources,
+                top_p=1
+            )
+            # """
+            #print(f"Created agent, ID: {agent.id}")
+        print(f"Agent found, ID: {agent.id}") 
+        thread = agents_client.threads.create()
+        print(f"Created thread, ID: {thread.id}")
+
+        message = agents_client.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=synthesis_response,
+        )
+        #print(f"Created message, ID: {message.id}")
+
+        run = agents_client.runs.create(thread_id=thread.id, agent_id=agent.id)
+        #print(f"Created run, ID: {run.id}")
+
+        while run.status in ["queued", "in_progress", "requires_action"]:
+            time.sleep(1)
+            run = agents_client.runs.get(thread_id=thread.id, run_id=run.id)
+
+            if run.status == "requires_action" and isinstance(run.required_action, SubmitToolOutputsAction):
+                tool_calls = run.required_action.submit_tool_outputs.tool_calls
+                if not tool_calls:
+                    print("No tool calls provided - cancelling run")
+                    agents_client.runs.cancel(thread_id=thread.id, run_id=run.id)
+                    break
+
+                tool_outputs = []
+                for tool_call in tool_calls:
+                    if isinstance(tool_call, RequiredFunctionToolCall):
+                        #print("Is an instance of RequiredFunctionToolCall")
+                        try:
+                            #print(f"Executing tool call: {tool_call}")
+                            output = functions.execute(tool_call)
+                            print(f"Output={output}")
+                            answer = output
+                            tool_outputs.append(
+                                ToolOutput(
+                                    tool_call_id=tool_call.id,
+                                    output=output,
+                                )
+                            )
+                        except Exception as e:
+                            print(f"Error executing tool_call {tool_call.id}: {e}")
+                    else:
+                        print(f"{tool_call} skipped.")
+
+                print(f"Tool outputs: {tool_outputs}")
+                if tool_outputs:
+                    agents_client.runs.submit_tool_outputs(thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs)
+                else:
+                    print(f"No tool output.")
+            else:
+                print(f"Waiting: {run}")
+
+            print(f"Current run status: {run.status}")
+
+        print(f"Run completed with status: {run.status} and details {run}")
+
+        # Delete the agent when done
+        # agents_client.delete_agent(agent.id)
+        # print("Deleted agent")
+
+        # Fetch and log all messages
+        """
+        messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
+        for msg in messages:
+            if msg.text_messages:
+                last_text = msg.text_messages[-1]
+                print(f"{msg.role}: {last_text.text.value}")
+                return last_text.text.value
+        """
+        # print(f"answer={answer}")
+    if not answer:
+        answer = synthesis_response
+    return answer 
 """
 search-agent-in-a-team
  
@@ -555,3 +787,4 @@ specialized_tasks => asst_v2Hj4CJ5wEW2gqGwG44YtbD4
 file_agent => asst_ilwEdVRNApUDmqa2EB3sSBKp
 
 """
+

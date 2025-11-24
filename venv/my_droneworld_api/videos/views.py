@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .models import VideoEntity
 from .serializers import VideoEntitySerializer
-from .myvideoanalyzer import knowledge_base_search, run_function_tools, synthesize_from_agents
+from .myvideoanalyzer import knowledge_base_search, run_function_tools, synthesize_from_agents, synthesize_from_chat_agent
 from .analyzer_functions import perplexity_retrieval
 from .myvideoindexer import get_image_blob_url, get_uploaded_frames
 from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
@@ -213,7 +213,8 @@ class ChatAPIView(APIView):
                 return Response({'text': 'Content has not been processed to analyze. Please try again later.','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
             # return Response({'text': 'Dummy Response','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)    
             sas_url_template = sas_url_template.replace("frame0", "frame(number)")
-            response_text = synthesize_from_agents(query_text, account_id)
+            response_text = synthesize_from_chat_agent(query_text, account_id)
+            # response_text = synthesize_from_agents(query_text, account_id)
             # response_text = knowledge_base_search(query_text, account_id)
             # response_text = run_function_tools(query_text, account_id)
             print(f"Answer={response_text}")

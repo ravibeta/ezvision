@@ -183,6 +183,7 @@ AZURE_OPENAI_EMBEDDING_MODEL = os.getenv("AZURE_OPENAI_EMBEDDING_MODEL", "text-e
 AZURE_FN_AGENT_NAME = os.getenv("AZURE_FN_AGENT_NAME", "fn-agent-in-a-team")
 AZURE_CHAT_AGENT_NAME = os.getenv("AZURE_CHAT_AGENT_NAME", "chat-agent-in-a-team")
 AZURE_SEARCH_AGENT_NAME = os.getenv("AZURE_SEARCH_AGENT_NAME", "search-agent-in-a-team")
+AZURE_TOOL_AGENT_NAME = os.getenv("AZURE_TOOL_AGENT_NAME", "tool-agent-in-a-team")
 PERPLEXITY_GEO_API_KEY = os.getenv("PERPLEXITY_GEO_API_KEY", "some-api-key")
 PERPLEXITY_GEO_API_URL = os.getenv("PERPLEXITY_GEO_API_URL", "https://api.perplexity.ai/v1/image/geolocation")
 PERPLEXITY_CHAT_API_KEY = os.getenv("PERPLEXITY_API_KEY", "some-api-key")
