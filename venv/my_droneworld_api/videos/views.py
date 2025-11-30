@@ -213,7 +213,9 @@ class ChatAPIView(APIView):
                 return Response({'text': 'Content has not been processed to analyze. Please try again later.','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
             # return Response({'text': 'Dummy Response','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)    
             sas_url_template = sas_url_template.replace("frame0", "frame(number)")
-            response_text = synthesize_from_chat_agent(query_text, account_id)
+            from .myvideoanalyzer import object_in_scene_search
+            response_text = object_in_scene_search(query_text, account_id, video_id)
+            # response_text = synthesize_from_chat_agent(query_text, account_id)
             # response_text = synthesize_from_agents(query_text, account_id)
             # response_text = knowledge_base_search(query_text, account_id)
             # response_text = run_function_tools(query_text, account_id)

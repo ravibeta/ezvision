@@ -88,6 +88,66 @@ token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://se
 
 agent_max_output_tokens=10000
 
+def get_agent_id(agent_name):
+    project_client = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential()) 
+    agents_client = AgentsClient(
+        endpoint=project_endpoint,
+        credential=DefaultAzureCredential(),
+    )
+    agent = None
+    for entry in agents_client.list_agents():
+        if entry.name == agent_name:
+            agent = entry
+            break;
+    if not agent:
+        print(f"Agent not found: {agent_name}")
+        return None
+    # Find the agent ID for the given name
+    agent_id = agent.id
+    return agent_id
+
+def ask_agent(agent_name, query_text):
+    agent_id = get_agent_id(agent_name)
+    if not agent_id:
+        return None
+    print(f"Agent ID for {agent_name} is {agent_id}")
+
+    project_client = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential()) 
+    thread = project_client.agents.threads.create()
+    print(f"Created thread, ID: {thread.id}")
+
+    message = project_client.agents.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=query_text
+    )
+
+    run = project_client.agents.runs.create_and_process(
+        thread_id=thread.id,
+        agent_id=agent_id)
+
+    if run.status == "failed":
+        print(f"Run failed: {run.last_error}")
+        return None
+    else:
+        messages = project_client.agents.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
+        return messages
+    
+def ask_agent_for_url(agent_name, query_text):
+        messages = ask_agent(agent_name, query_text)
+        if not messages:
+            return None
+        for message in messages:
+            if message.text_messages:
+                print(f"{message.role}: {message.text_messages[-1].text.value}")
+                for item in message.text_messages:
+                    if item and item.text:
+                        for annotation in item.text.annotations:
+                            if annotation.type == "url_citation":
+                                print(f"url={annotation.url_citation.url}")
+                                return  annotation.url_citation.url
+
+
 def delete_all_threads_for_agent(agent_name):
     project_client = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential()) 
     agents_client = AgentsClient(
@@ -655,7 +715,17 @@ def run_analyzer_tools(query_text, account_id):
 
 def synthesize_from_chat_agent(query_text, account_id):
     # Query the Search-backed agent
-    knowledge_search_answer = knowledge_base_search(query_text, account_id)
+    # knowledge_search_answer = knowledge_base_search(query_text, account_id)
+    knowledge_search_answer = """
+     Based on the analysis of the saved images, there are multiple indications of cars being present, especially in contexts involving parking lots and streets. However, I didn’t obtain an exact count for the total number of cars across all saved images.
+
+    Here are some key mentions found:
+    1. One image described a "car parking lot with lots of cars."
+    2. Another described an "aerial view of a parking lot with cars."
+    3. There were also references to "cars parked on a road" and a "car driving on a road."
+
+    Since the specific count was not retrieved, if you have particular images or details in mind, you may want to examine them closely to get an exact figure. If you need further analytics or a more rigorous count, tools designed for object detection and counting might be employed. Please let me know how you would like to proceed!
+    """
     delegated_answer = run_analyzer_tools(query_text, account_id)
     # Synthesize by prompting the composite agent
     synthesis_response = f"""
@@ -787,3 +857,201 @@ file_agent => asst_ilwEdVRNApUDmqa2EB3sSBKp
 
 """
 
+def file_agent_search(query_text, account_id):
+    answer = None
+    project_client = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential()) 
+    agents_client = AgentsClient(
+        endpoint=project_endpoint,
+        credential=DefaultAzureCredential(),
+    )
+    connected_agent_name = "master-agent-in-a-team"
+    from .analyzer_functions import analyzer_functions, image_user_functions
+    from azure.ai.agents.models import (
+        AzureAISearchTool,
+        AzureAISearchQueryType,
+        ConnectedAgentTool
+    )
+    from azure.ai.projects.models import ConnectionType
+    # from azure.ai.projects.models import (
+        # ConnectionResource,
+        # ConnectionType
+    # )
+    # image_user_functions: Set[Callable[..., Any]] = {
+        # agentic_retrieval
+    # }
+
+    search_connection_name = index_name
+    existing_connection = None
+    connected_agent = None
+    ai_search_agent = None
+    for entry in project_client.agents.list_agents():
+        print(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
+        if entry.name == fn_agent_name:
+            connected_agent = entry
+        if entry.name == connected_agent_name:
+            ai_search_agent = entry
+        # Listing Agent: id: asst_FNwlA7fqvDf4WdbVtsIHYQZS, name: master-agent-in-a-team, model: gpt-4o-mini
+        # Listing Agent: id: asst_v2Hj4CJ5wEW2gqGwG44YtbD4, name: fn-agent-in-a-team, model: gpt-4o-mini
+        # Listing Agent: id: asst_ilwEdVRNApUDmqa2EB3sSBKp, name: file-agent-in-a-team, model: gpt-4o-mini
+        # Listing Agent: id: asst_lsH8uwS4hrg4v1lRpXm6sdtR, name: chat-agent-in-a-team, model: gpt-4o-mini
+        # Listing Agent: id: asst_JI9VWjdav3To7jjGUROejGkV, name: object-search-agent, model: gpt-4o-mini
+    for deployment in project_client.deployments.list():
+        print(f"Deployment: type:{deployment.type}, name:{deployment.name}")
+        if "id" in deployment and deployment.id:
+            print(f"Deployment_id: {deployment.id}")
+            # Deployment: type:ModelDeployment, name:gpt-4o-mini
+            # Deployment: type:ModelDeployment, name:text-embedding-ada-002
+    model_deployment_id = "/subscriptions/656e67c6-f810-4ea6-8b89-636dd0b6774c/resourceGroups/rg-ctl-2/providers/Microsoft.CognitiveServices/accounts/found-vision-1/projects/droneimage/deployments/gpt-4o-mini"
+    for conn in project_client.connections.list():
+        # print(f"Connection: id:{conn.id}, name:{conn.name}, type: {conn.type}, target: {conn.target}, is_default: {conn.is_default}")
+        # Connection:id:/subscriptions/656e67c6-f810-4ea6-8b89-636dd0b6774c/resourceGroups/rg-ctl-2/providers/Microsoft.CognitiveServices/accounts/found-vision-1/projects/droneimage/connections/srchvision01, name:srchvision01, type: ConnectionType.AZURE_AI_SEARCH, target: https://srch-vision-01.search.windows.net/, is_default: True
+        # Connection: id:/subscriptions/656e67c6-f810-4ea6-8b89-636dd0b6774c/resourceGroups/rg-ctl-2/providers/Microsoft.CognitiveServices/accounts/found-vision-1/projects/droneimage/connections/LogicApps_Tool_Connection_fnagentaction_7461, name:LogicApps_Tool_Connection_fnagentaction_7461, type: ConnectionType.CUSTOM, target: _, is_default: True
+        if conn.name == search_connection_name and conn.connection_type == ConnectionType.AZURE_AI_SEARCH:
+            existing_connection = conn
+            print(f"Found existing knowledge source connection id: {conn.name}")
+            break
+    """        
+    if not existing_connection:
+        print(f"Creating connection to knowledge source by name: {search_connection_name}")
+        created_connection = project_client.connections.create(
+            name=search_connection_name,
+            connection_type=ConnectionType.AZURE_AI_SEARCH,
+            target=search_endpoint,
+            auth_type="ApiKey",
+            credentials={"key": api_key},
+            metadata={"description": "Programmatic connection for Azure AI Search index007"}
+        )
+        existing_connection = created_connection
+    search_connection_id = existing_connection.id
+    """
+    search_connection_id = connection_id
+    # print(f"connection-id: {search_connection_id}")
+    # Initialize search tool definition
+    ai_search_tool = AzureAISearchTool(
+        index_connection_id=search_connection_id,
+        index_name=index_name,
+        query_type=AzureAISearchQueryType.VECTOR_SEMANTIC_HYBRID,
+        top_k=3,
+        filter = "account_id eq '" + account_id + "'"
+        # filter="startwith(account_id,'" + account_id + "')"
+    )
+    print(f"ai_search_tool created for_agent")
+    connected_agent_instructions = "If the search over the Azure AI search index does not provide a conclusive answer for the user query, then answer the question by finding a suitable function, passing the question to the function, evaluating it and relaying the response from the function. If you can't find a suitable function, default to the ask_perplexity function included in your tools."
+    connected_agent_tool = ConnectedAgentTool(
+        id=connected_agent.id, 
+        name="connected_agent", 
+        description=connected_agent_instructions
+    )
+    # Initialize search call
+    instructions = "You are a drone aerial image analytics assistant that answers the caller's question by searching an azure search index or delegating to connected agent, evaluating the responses and synthesizing a comprehensive response back to the caller. If you can't find a suitable answer, reply with I do not know."
+    # query_text = f"How many objects given by its image URI {object_uri} are found in the image given by its image URI {scene_uri}?"
+    with agents_client:
+        agent = None
+        for entity in agents_client.list_agents():
+            if entity.name == connected_agent_name:  
+                agent = entity
+        if  agent is None:
+            print("no agent found")
+            agent = agents_client.create_agent(
+                model="gpt-4o-mini",
+                name=connected_agent_name,
+                instructions=instructions,
+                tools=ai_search_tool.definitions + connected_agent_tool.definitions,
+                tool_resources=ai_search_tool.resources + connected_agent_tool.resources,
+                top_p=1
+            )
+            # """
+            #print(f"Created agent, ID: {agent.id}")
+        print(f"Agent found, ID: {agent.id}") 
+        thread = agents_client.threads.create()
+        print(f"Created thread, ID: {thread.id}")
+
+        message = agents_client.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=query_text,
+        )
+        print(f"Created message, ID: {message.id}")
+
+        run = agents_client.runs.create(thread_id=thread.id, agent_id=agent.id)
+        print(f"Created run, ID: {run.id}")
+
+        while run.status in ["queued", "in_progress", "requires_action"]:
+            time.sleep(1)
+            run = agents_client.runs.get(thread_id=thread.id, run_id=run.id)
+
+            if run.status == "requires_action" and isinstance(run.required_action, SubmitToolOutputsAction):
+                tool_calls = run.required_action.submit_tool_outputs.tool_calls
+                if not tool_calls:
+                    print("No tool calls provided - cancelling run")
+                    agents_client.runs.cancel(thread_id=thread.id, run_id=run.id)
+                    break
+
+                tool_outputs = []
+                for tool_call in tool_calls:
+                    print(f"Tool Call id: {tool_call.id}, type:{tool_call.type}")
+                    if isinstance(tool_call, RunStepAzureAISearchToolCall):
+                        #print("Is an instance of RequiredFunctionToolCall")
+                        try:
+                            #print(f"Executing tool call: {tool_call}")
+                            output = ai_search_tool.execute(tool_call)
+                            print(f"Output={output}")
+                            answer = output
+                            tool_outputs.append(
+                                ToolOutput(
+                                    tool_call_id=tool_call.id,
+                                    output=output,
+                                )
+                            )
+                        except Exception as e:
+                            print(f"Error executing tool_call {tool_call.id}: {e}")
+                    else:
+                        print(f"{tool_call} skipped.")
+
+                print(f"Tool outputs: {tool_outputs}")
+                if tool_outputs:
+                    agents_client.runs.submit_tool_outputs(thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs)
+                else:
+                    print(f"No tool output.")
+            else:
+                print(f"Waiting: {run}")
+
+            print(f"Current run status: {run.status}")
+
+        print(f"Run completed with status: {run.status} and details {run}")
+
+        # Delete the agent when done
+        # agents_client.delete_agent(agent.id)
+        # print("Deleted agent")
+
+        # Fetch and log all messages
+        
+        messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
+        for msg in messages:
+            print(f"msg={msg}")
+            if msg.text_messages:
+                last_text = msg.text_messages[-1]
+                print(f"{msg.role}: {last_text.text.value}")
+                answer = last_text.text.value
+                citations = []
+                for annotation in last_text.text.annotations:
+                    citations += [annotation.url_citation.url]
+        print(f"answer={answer}")
+        for entry in project_client.agents.list_agents():
+            print(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
+        return answer
+
+def object_in_scene_search(query_text, account_id, video_id = None):
+    from .analyzer_functions import get_object_uri, get_scene_uri
+    answer = None
+    object_uri = get_object_uri(query_text, account_id, video_id)
+    print(f"object_uri={object_uri}")
+    scene_uri = get_scene_uri(query_text, account_id, video_id)
+    print(f"scene_uri={scene_uri}")
+    if object_uri and scene_uri:
+        query_text = f"How many objects given by its image URI {object_uri} are found in the image given by its image URI {scene_uri} where the objects are described in the {query_text}?"
+        from .analyzer_functions import ask_perplexity
+        answer = ask_perplexity(query_text, account_id = "2", video_id = "1")
+        print(f"perplexity_response={answer}")
+        return answer
+    return answer

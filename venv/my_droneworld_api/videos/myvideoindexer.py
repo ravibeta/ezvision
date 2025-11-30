@@ -585,6 +585,16 @@ def read_image_from_blob(sas_url):
         # raise Exception(f"Failed to fetch image. Status code: {response.status_code}")
         return None
 
+def upload_image_to_blob(clipped_image, object_url):
+    try:
+        image_blob_client = BlobClient.from_blob_url(object_url)
+        # Upload frame as image
+        image_blob_client.upload_blob(clipped_image, overwrite=True)
+    except Exception as e:
+        print(f"Error uploading image to blob: {e}")
+        return
+    pass
+
 def clip_image(image, bounding_box):
     # Extract bounding box parameters
     x, y, width, height = bounding_box

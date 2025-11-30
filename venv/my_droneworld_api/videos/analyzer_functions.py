@@ -48,7 +48,7 @@ def count_object_occurrences(scene, template, threshold=match_threshold):
     return len(rects)
 
 # Step 3: Count matches
-def count_matches():
+def count_matches(scene_uri, object_uri):
     scene_img = download_image(scene_uri)
     object_img = download_image(object_uri)
     count = count_object_occurrences(scene_img, object_img)
@@ -162,14 +162,14 @@ def count_multiple_matches(scene_uri, object_uri):
     return count
 
 
-def agentic_retrieval(pattern_uri: Optional[str] = None, content_uri: Optional[str] = None) -> str:
+def agentic_retrieval(pattern_uri: Optional[str] = None, content_uri: Optional[str] = None, query_text: Optional[str] = None, account_id: Optional[str] = None, video_id: Optional[str] = None) -> str:
     if not pattern_uri:
         print(f"No pattern uri for object to be detected found.")
-        pattern_uri = object_uri
+        pattern_uri = get_object_uri(query_text, account_id, video_id)
     if not content_uri:
         print(f"No content uri for scene to detect objects found.")
-        content_uri = scene_uri
-    count = dbscan.count_multiple_matches(scene_uri, object_uri)
+        content_uri = get_scene_uri(query_text, account_id, video_id)    
+    count = count_multiple_matches(scene_uri, object_uri)
     return f"{count}"
     
 
@@ -223,6 +223,184 @@ def perplexity_retrieval(images_uri, query_text, account_number=2, frames=[], im
         print(f"API Request failed: {e}")
         return "No comment."
 
+def parse_bbox(s: str):
+    import re
+    """
+    Parse a bounding box pattern from a string of the form:
+    "{x: 0, y: 0, w: 74, h: 103}"
+    
+    Returns:
+        tuple (x, y, w, h) if found, else None
+    """
+    pattern = r"\{x:\s*(\d+),\s*y:\s*(\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)\}"
+    match = re.search(pattern, s)
+    if match:
+        x, y, w, h = map(int, match.groups())
+        return (x, y, w, h)
+    pattern = r"\(x:\s*(\d+),\s*y:\s*(\d+),\s*width:\s*(\d+),\s*height:\s*(\d+)\)"
+    match = re.search(pattern, s)
+    if match:
+        x, y, w, h = map(int, match.groups())
+        return (x, y, w, h)
+    return None
+
+
+def get_object_uri(object_description, account_id, video_id = None, frame_number = None):
+    query_text = f"Find the bounding box for a {object_description} in the saved images and cite the document url where it was found. Display the bounding box in the format {{x: , y: , w: , h: }}."
+    query_text = f"Find {object_description} in saved images, cite your reference and from the description field of the reference and then find the bounding box for the asked item. Display the bounding box in the format {{x: , y: , w: , h: }}."
+    sas_url_template = get_sas_url_template(account_id, video_id, upload=True)
+    if frame_number:
+        return get_sas_url_for_frame(account_id, sas_url_template, frame_number)
+    #"""
+    # ask an agent or search blob store
+    from .myvideoanalyzer import ask_agent_for_url, ask_agent
+    messages = ask_agent("scene-search-agent", query_text)
+    if not messages:
+        return None
+    answer = None
+    url = None
+    for message in messages:
+        if message.text_messages:
+            answer = message.text_messages[-1].text.value
+            for annotation in message.text_messages[-1].text.annotations:
+                    if annotation.type == "url_citation":
+                        print(f"url={annotation.url_citation.url}")
+                        url =  annotation.url_citation.url
+                        break
+    #"""
+    # answer = "url=016477-0008,{x: 0, y: 0, w: 74, h: 103}"
+    # url="016477-0008"
+    if answer and url:
+        print(f"answer={answer}")
+        bbox = parse_bbox(answer)
+        print(f"bbox={bbox}")
+        if not bbox:
+            return None
+        # account_id = document.split('-')[0]
+        frame_number = url.split('-')[1] # depends on the naming convention
+        frame_number=str(int(frame_number))
+        if not video_id:
+            try:
+               from .models import VideoEntity
+               video_id = VideoEntity.objects.filter(account_id=account_id).last().id
+            except Exception as e:
+               print(f"Request failed: {e}")
+        # sas_url_template = get_sas_url_template(account_id, video_id)
+        print(f"sas_url_template={sas_url_template}")
+        image_url = get_sas_url_for_frame(account_id, sas_url_template, frame_number)
+        print(f"image_url={image_url}")
+        # object_url = f"{image_url}&x={bbox[0]}&y={bbox[1]}&w={bbox[2]}&h={bbox[3]}"
+        # print(f"object_url={object_url}")
+        from datetime import datetime
+        now = datetime.now()
+        destination_file = now.strftime("%Y%m%d%H%M%S")
+        print(f"destination_file={destination_file}")
+        from .myvideoindexer import read_image_from_blob
+        image = read_image_from_blob(image_url)
+        if image.any() == False:
+            print(f"{url} not found.")
+            return None
+        # Clip image
+        x, y, width, height = bbox
+        clipped_image = image[y:y+height, x:x+width]
+        if clipped_image.any() == False:
+            print(f"Clipped image is empty.")
+            return None
+        _, buffer = cv2.imencode('.jpg', clipped_image)
+        image_bytes = buffer.tobytes()
+        from .myvideoindexer import get_image_blob_url
+        object_url = get_image_blob_url(image_url, frame_number, folder='queries', prefix=destination_file, include_name=False)
+        print(f"object_url={object_url}")
+        from .myvideoindexer import upload_image_to_blob
+        upload_image_to_blob(image_bytes, object_url)
+        print(f"Uploaded clipped image to {object_url}")
+        return object_url
+    return None
+    pass
+
+def get_scene_uri(query_text, account_id, video_id, frame_number = None):
+    sas_url_template = get_sas_url_template(account_id, video_id)
+    if frame_number:
+        return get_sas_url_for_frame(account_id, sas_url_template, frame_number)
+    # ask an agent or search blob store
+    from .myvideoanalyzer import ask_agent_for_url
+    document = ask_agent_for_url("scene-search-agent", f"Find a saved image for {query_text} and cite the document url where it was found")
+    if document:
+        print(f"document={document}")
+        # account_id = document.split('-')[0]
+        frame_number = document.split('-')[1]
+        frame_number = str(int(frame_number))
+        print(f"frame_number={frame_number}")
+        # frame_number="15"
+        sas_url_template = get_sas_url_template(account_id, video_id)
+        if frame_number:
+            return get_sas_url_for_frame(account_id, sas_url_template, frame_number)
+    return None
+    pass
+
+def get_sas_url_template(account_id, video_id= None, upload=False):
+    from .models import VideoEntity
+    from .serializers import VideoEntitySerializer
+    from .myvideoindexer import get_image_blob_url, get_uploaded_frames
+    if not video_id:
+        video_id =  VideoEntity.objects.filter(account_id=account_id).last().id
+        video_id = str(video_id)
+    try:
+        video_sas_url = VideoEntity.objects.get(pk=video_id).sas_url
+        blob_service_client = None
+        account_name = settings.ACCOUNT_NAME
+        account_url = f'https://{account_name}.blob.core.windows.net'
+        account_key = settings.AZURE_ACCOUNT_KEY
+        container = settings.CONTAINER_NAME
+        from azure.storage.blob import BlobServiceClient
+        blob_service_client = BlobServiceClient(
+            account_url=account_url,
+            credential=account_key
+        )
+        blob_client = blob_service_client.get_blob_client(container=container, blob="/")
+        from azure.storage.blob import generate_container_sas, BlobSasPermissions
+        permission = BlobSasPermissions(read=True, list=True)
+        if upload == True:
+            permission = BlobSasPermissions(read=True, write=True, create=True, list=True, add=True, delete_previous_version=True)
+        print(f"permission={permission}")
+        import datetime
+        sas_token = generate_container_sas(
+            account_name=account_name,
+            container_name=container,
+            account_key=settings.AZURE_ACCOUNT_KEY,
+            permission=permission,
+            expiry=datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        )
+        # print(f"sas_token={sas_token}")
+        video_sas_url = video_sas_url.split('?')[0] + "?" + sas_token
+        # print(f"video_sas_url={video_sas_url}")
+        sas_url_template = get_image_blob_url(video_sas_url, 0, folder='images', prefix='frame', include_name=False, video_id=video_id)
+        # print(f"sas_url_template={sas_url_template}")
+        highest = get_uploaded_frames(video_sas_url, account_id = str(account_id), video_id = video_id)
+        print(f"highest={highest}")
+        frames = []
+        if highest and int(highest) > 0:
+            print(f"highest={highest}")
+            frames = [str(0), str(int(highest/2)), str(highest-1)]
+        # if frames_list:
+        #     frames = frames_list.strip(',').split(',')
+        print(frames)
+        if not frames:
+            frames =  [str(num) for num in list(range(20))]
+        sas_url_template = sas_url_template.replace("frame0", "frame(number)")
+    except Exception as e:
+        print(f"Request failed: {e}")
+        sas_url_template = None
+    return sas_url_template
+    pass
+
+def get_sas_url_for_frame(account_id, sas_url_template, frame_number):
+    try:
+        sas_url = sas_url_template.replace("frame(number)", f"frame{frame_number}")
+        return sas_url
+    except Exception as e:
+        print(f"Request failed: {e}")
+        return None
 
 def ask_perplexity(query_text, account_id = "2", video_id = None, frames_list = None):
     print(f"ask_perplexity called with {query_text}")
@@ -290,6 +468,10 @@ analyzer_functions: Set[Callable[..., Any]] = {
     plot_clusters,
     count_multiple_matches,
     agentic_retrieval,
+    get_object_uri,
+    get_scene_uri,
+    get_sas_url_template,
+    get_sas_url_for_frame,
     ask_perplexity
 }
 
