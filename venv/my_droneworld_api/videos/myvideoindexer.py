@@ -692,11 +692,77 @@ def get_search_client():
         credential=AzureKeyCredential(search_api_key)
     )
 
+def copy_blob(source_sas_url: str, destination_sas_url: str, poll_interval: int = 2):
+    status = None
+    try:
+        dest_blob = BlobClient.from_blob_url(destination_sas_url)
+        # Start copy operation (server-side, async)
+        copy_props = dest_blob.start_copy_from_url(source_sas_url)
+        copy_id = copy_props['copy_id']
+
+        print("Copy initiated.")
+        print(f"Copy ID: {copy_props['copy_id']}")
+        print(f"Copy Status: {copy_props['copy_status']}")
+
+        # Poll until completion
+        while True:
+            props = dest_blob.get_blob_properties()
+            status = props.copy.status
+            print(f"Copy status: {status}")
+
+            if status in ("success", "failed", "aborted"):
+                print(f"Final status: {status}")
+                break
+            import time
+            time.sleep(poll_interval)
+    except Exception as e:
+        print(f"Error during blob copy: {e}")
+    return status
+
+def get_destination_sas_url(video_sas_url: str, upload = True) -> str:
+        blob_service_client = None
+        account_name = settings.ACCOUNT_NAME
+        account_url = f'https://{account_name}.blob.core.windows.net'
+        account_key = settings.AZURE_ACCOUNT_KEY
+        container = settings.CONTAINER_NAME
+        from azure.storage.blob import BlobServiceClient
+        blob_service_client = BlobServiceClient(
+            account_url=account_url,
+            credential=account_key
+        )
+        blob_client = blob_service_client.get_blob_client(container=container, blob="/")
+        from azure.storage.blob import generate_container_sas, BlobSasPermissions
+        permission = BlobSasPermissions(read=True, list=True)
+        if upload == True:
+            permission = BlobSasPermissions(read=True, write=True, create=True, list=True, add=True, delete_previous_version=True)
+        print(f"permission={permission}")
+        import datetime
+        sas_token = generate_container_sas(
+            account_name=account_name,
+            container_name=container,
+            account_key=settings.AZURE_ACCOUNT_KEY,
+            permission=permission,
+            expiry=datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        )
+        # print(f"sas_token={sas_token}")
+        video_sas_url = video_sas_url.split('?')[0] + "?" + sas_token
+        parsed = urlparse(video_sas_url)
+        path_parts = parsed.path.split('/')
+        blob_name = path_parts[-1].split('.')[0]
+        video_sas_url = video_sas_url.replace(blob_name, blob_name+"_indexed")
+        return video_sas_url
+
 def indexing_workflow(source_video_url, account_id = None, video_id = None):
     print(f"account_id={account_id}")
     if not account_id:
         account_id = settings.AZURE_VIDEO_INDEXER_ACCOUNT
-    video_url = index_and_download_video(account_id = account_id, video_url = source_video_url)
+    indexer_url = index_and_download_video(account_id = account_id, video_url = source_video_url)
+    video_url = get_destination_sas_url(source_video_url)
+    print(f"Destination SAS URL: {video_url}")
+    status = copy_blob(indexer_url, video_url)
+    print(f"status of copy blob: {status}")
+    if not status or status != "success":
+        return None
     # video_url = source_video_url
     if not video_url:
         return None
