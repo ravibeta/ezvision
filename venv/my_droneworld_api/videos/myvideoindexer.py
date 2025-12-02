@@ -78,8 +78,13 @@ def upload_and_index_video(access_token, accountId, video_file_path, video_url =
     if video_url:
         import urllib
         encoded_url = urllib.parse.quote(video_url, safe='')
-        url += f"videoUrl={encoded_url}"
-        response = requests.post(url)
+        url += f"&videoUrl={encoded_url}"
+        headers = {}
+        headers["Ocp-apim-subscription-key"]=""+settings.AZURE_VIDEO_INDEXER_API_KEY
+        headers["Cache-Control"]="no-cache"
+        headers["Authorization"]="Bearer "+ access_token
+        print(f"headers={headers}")
+        response = requests.post(url,headers=headers)
         return response.json()
     else:
         with open(video_file_path, 'rb') as video_file:
