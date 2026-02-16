@@ -2,12 +2,13 @@
 # Export one document at a time using REST API and loop
 # Variables
 search_service="srch-vision-01"
-index_name="index007"
+index_name="index02"
 resource_group="rg-ctl-2"
 storage_account="sadronevideo"
 container_name="metadata"
 total_docs=27
 api_version="2023-10-preview"
+
 
 echo $search_service
 echo $index_name

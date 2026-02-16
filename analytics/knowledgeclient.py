@@ -1,12 +1,12 @@
 from azure.search.documents.indexes import SearchIndexClient 
-
-from azure.search.documents.indexes.models import ( 
-    KnowledgeAgent, 
-    KnowledgeAgentAzureOpenAIModel, 
-    KnowledgeAgentRequestLimits, 
-    KnowledgeAgentTargetIndex,
-    AzureOpenAIVectorizerParameters
-)
+from azure.ai.projects import AIProjectClient
+# from azure.search.documents.indexes.models import ( 
+#     KnowledgeAgent, 
+#     KnowledgeAgentAzureOpenAIModel, 
+#     KnowledgeAgentRequestLimits, 
+#     KnowledgeAgentTargetIndex,
+#     AzureOpenAIVectorizerParameters
+# )
 from azure.ai.agents.models import AzureAISearchTool, AzureAISearchQueryType, MessageRole, ListSortOrder
 
 
@@ -42,33 +42,76 @@ agent_name = os.getenv("AZURE_SEARCH_AGENT_NAME", "objects-search-agent")
 api_version = "2025-05-01-Preview"
 agent_max_output_tokens=10000
 
-agents_client = AgentsClient(endpoint=project_endpoint, credential=DefaultAzureCredential())
-index_client = SearchIndexClient(endpoint=search_endpoint, credential=AzureKeyCredential(search_api_key)) 
-instructions = """
-You are an AI assistant that answers questions about the stored and indexed drone images and objects in search index index02.
-The data source is an Azure AI Search resource where the schema has JSON description field, a vector field and an id field and this id field must be cited in your answer.
-If you do not find a match for the query, respond with "I don't know", otherwise cite references with the value of the id field.
-"""
+# agents_client = AgentsClient(endpoint=project_endpoint, credential=DefaultAzureCredential())
+# index_client = SearchIndexClient(endpoint=search_endpoint, credential=AzureKeyCredential(search_api_key)) 
+# instructions = """
+# You are an AI assistant that answers questions about the stored and indexed drone images and objects in search index index02.
+# The data source is an Azure AI Search resource where the schema has JSON description field, a vector field and an id field and this id field must be cited in your answer.
+# If you do not find a match for the query, respond with "I don't know", otherwise cite references with the value of the id field.
+# """
 
-connection_id = os.getenv("AI_AZURE_AI_CONNECTION_ID","https://srch-vision-01.search.windows.net")
+# connection_id = os.getenv("AI_AZURE_AI_CONNECTION_ID","https://srch-vision-01.search.windows.net")
 # Initialize agent AI search tool and add the search index connection id
 
 # Initialize the AzureAISearchTool
 # You can specify optional parameters like query_type, filter, and top_k
-search_tool = AzureAISearchTool(
-    index_connection_id=connection_id,
-    index_name=index_name,
-    query_type=AzureAISearchQueryType.VECTOR_SEMANTIC_HYBRID,
-    filter="",  # Optional filter expression
-    top_k=3  # Number of results to return
-)
-existing_agents = agents_client.list_agents()
-print(f"Agents other than {agent_name}:")
-print(",".join([f"{agent.name}:{agent.model}" for agent in existing_agents]))
-agent = agents_client.get_agent(agent_id="asst_JI9VWjdav3To7jjGUROejGkV")
+# search_tool = AzureAISearchTool(
+#     index_connection_id=connection_id,
+#     index_name=index_name,
+#     query_type=AzureAISearchQueryType.VECTOR_SEMANTIC_HYBRID,
+#     filter="",  # Optional filter expression
+#     top_k=3  # Number of results to return
+# )
+# existing_agents = agents_client.list_agents()
+# print(f"Agents other than {agent_name}:")
+# print(",".join([f"{agent.name}:{agent.model}" for agent in existing_agents]))
+# agent = agents_client.get_agent(agent_id="asst_JI9VWjdav3To7jjGUROejGkV")
 
-# Create a thread for the conversation
-thread = agents_client.threads.create()
+def get_agent_id(agent_name):
+    agents_client = AgentsClient(
+        endpoint=project_endpoint,
+        credential=DefaultAzureCredential(),
+    )
+    agent = None
+    for entry in agents_client.list_agents():
+        if entry.name == agent_name:
+            agent = entry
+            break;
+    if not agent:
+        print(f"Agent not found: {agent_name}")
+        return None
+    # Find the agent ID for the given name
+    agent_id = agent.id
+    return agent_id
+
+def ask_agent(agent_name, query_text):
+    # agent_id = get_agent_id(agent_name)
+    agent_id = "asst_JI9VWjdav3To7jjGUROejGkV"
+    if not agent_id:
+        return None
+    # print(f"Agent ID for {agent_name} is {agent_id}")
+
+    project_client = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential()) 
+    thread = project_client.agents.threads.create()
+    # print(f"Created thread, ID: {thread.id}")
+
+    message = project_client.agents.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=query_text
+    )
+
+    run = project_client.agents.runs.create_and_process(
+        thread_id=thread.id,
+        agent_id=agent_id)
+
+    if run.status == "failed":
+        print(f"Run failed: {run.last_error}")
+        return None
+    else:
+        messages = project_client.agents.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
+        return messages
+    
 
 # Send a user message (the query text)
 query_text = "How many red cars can be found?"
@@ -80,20 +123,41 @@ query_text = "Find images with green bicycle crossing signs at street intersecti
 query_text = "How many bicycle crossing signs can be found at street intersections."
 query_text = "How far apart is abuilding with distinct circular roof structure from the nearest water body such as a lake?"
 query_text = "Find images with big parking lots."
-message = agents_client.messages.create(
-    thread_id=thread.id,
-    role=MessageRole.USER,
-    content=query_text,
-)
-# Run the agent to process the query
-run = agents_client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
 
-# Check run status
-if run.status == "failed":
-    print(f"Run failed: {run.last_error}")
-
-# Retrieve and print all messages in the thread (including agent's answer)
-messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
+query_text = "Find aerial image with most number of cars parked."
+query_text = "Find aerial image with most number of cars parked in a parking garage."
+query_text = "Find aerial image with the largest building by area."
+query_text = "Find aerial image with the largest building."
+query_text = "Find aerial image with the busiest street intersection."
+query_text = "What is the largest object in any of the aerial images?"
+query_text = "Find aerial image with roof structure that covers the roof entirely."
+query_text = "Find aerial image with the most number of buildings."
+messages = ask_agent("objects-search-agent", query_text)
 for message in messages:
-    print(",".join([key for key in message.keys()]))
-    print(f"Role: {message.role}, Content: {message.content}, Metadata: {message.metadata}")
+    if message.text_messages:
+        print (f"{message.role}: {message.text_messages[-1].text.value}")
+        print (f"Citations: {message.text_messages[-1].text.annotations[0].url_citation.url if message.text_messages[-1].text.annotations and message.text_messages[-1].text.annotations[0].type == "url_citation" else 'No citations'}")
+
+# # Create a thread for the conversation
+# thread = agents_client.threads.create()
+
+# message = agents_client.messages.create(
+#     thread_id=thread.id,
+#     role=MessageRole.USER,
+#     content=query_text,
+# )
+# # Run the agent to process the query
+# run = agents_client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
+
+# # Check run status
+# if run.status == "failed":
+#     print(f"Run failed: {run.last_error}")
+
+# # Retrieve and print all messages in the thread (including agent's answer)
+# messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
+# for message in messages:
+#     # print(",".join([key for key in message.keys()]))
+#     # print(f"Role: {message.role}, Content: {message.content}, Metadata: {message.metadata}")
+#     if message.text_messages:
+#         print (f"{message.role}: {message.text_messages[-1].text.value}")
+#         print (f"Citations: {message.text_messages[-1].text.annotations[0].url_citation.url if message.text_messages[-1].text.annotations[0].type == "url_citation" else 'No citations'}")
