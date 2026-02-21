@@ -1,0 +1,42 @@
+import requests
+from azure.cognitiveservices.vision.computervision import ComputerVisionClient
+from msrest.authentication import CognitiveServicesCredentials
+from PIL import Image
+import io
+import os
+# === Azure Computer Vision credentials ===
+vision_api_key = os.getenv("AZURE_AI_VISION_API_KEY")
+vision_api_version = os.getenv("AZURE_AI_VISION_API_VERSION")
+vision_region = os.getenv("AZURE_AI_VISION_REGION")
+vision_endpoint =  os.getenv("AZURE_AI_VISION_ENDPOINT")
+computervision_client = ComputerVisionClient(vision_endpoint, CognitiveServicesCredentials(vision_api_key))
+
+# === Bing Maps credentials ===
+bing_maps_key = os.getenv("BING_MAPS_API_KEY")
+
+# === Load local image ===
+image_path = "frame5.jpg"
+with open(image_path, "rb") as img_stream:
+    analysis = computervision_client.analyze_image_in_stream(
+        img_stream,
+        visual_features=["Tags"]
+    )
+
+# === Extract detected tags ===
+tags = [tag.name for tag in analysis.tags if tag.confidence > 0.5]
+
+# === Use Bing Maps to get coordinates ===
+def get_coordinates(landmark, bing_key):
+    url = f"http://dev.virtualearth.net/REST/v1/Locations?q={landmark}&key={bing_key}"
+    response = requests.get(url).json()
+    print(response)
+    resources = response.get("resourceSets", [])[0].get("resources", [])
+    return resources[0]["point"]["coordinates"] if resources else None
+
+# === Display results ===
+for tag in tags:
+    coords = get_coordinates(tag, bing_maps_key)
+    if coords:
+        print(f"Landmark: {tag}, Latitude: {coords[0]}, Longitude: {coords[1]}")
+    else:
+        print(f"No match found for tag: {tag}")

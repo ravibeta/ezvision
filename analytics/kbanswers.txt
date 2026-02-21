@@ -1,0 +1,38 @@
+query_text = "How many red cars can be found?"
+Role: MessageRole.USER, Content: [{'type': 'text', 'text': {'value': 'How many red cars can be found?', 'annotations': []}}]
+Role: MessageRole.AGENT, Content: [{'type': 'text', 'text': {'value': 'I found a total of 5 red cars in the indexed images. Here are their references:\n\n1. ID: 016062 - Described as "a red car on the road, a blurry red car"【3:0†source】.\n2. ID: 011456 - Described as "a red car on the road, a blurry red car on the road, a blurry image of a red car"【3:1†source】.\n3. ID: 015420 - Described as "a red car on the road"【3:2†source】.\n4. ID: 015601 - Described as "a red car on a road, a red car with lights on, a red car with white stripes"【3:3†source】.\n5. ID: 007737 - Described as "a blurry image of a red car"【3:4†source】. \n\nThese images depict various instances of red cars as per the search results.', 'annotations': [{'type': 'url_citation', 'text': '【3:0†source】', 'start_index': 151, 'end_index': 163, 'url_citation': {'url': 'doc_0', 'title': 'doc_0'}}, {'type': 'url_citation', 'text': '【3:1†source】', 'start_index': 276, 'end_index': 288, 'url_citation': {'url': 'doc_1', 'title': 'doc_1'}}, {'type': 'url_citation', 'text': '【3:2†source】', 'start_index': 342, 'end_index': 354, 'url_citation': {'url': 'doc_2', 'title': 'doc_2'}}, {'type': 'url_citation', 'text': '【3:3†source】', 'start_index': 462, 'end_index': 474, 'url_citation': {'url': 'doc_3', 'title': 'doc_3'}}, {'type': 'url_citation', 'text': '【3:4†source】', 'start_index': 534, 'end_index': 546, 'url_citation': {'url': 'doc_4', 'title': 'doc_4'}}]}}]
+
+
+query_text = "How many parkings spots are vacant near a building with circular roof?"
+Role: MessageRole.USER, Content: [{'type': 'text', 'text': {'value': 'How many parkings spots are vacant near a building with circular roof?', 'annotations': []}}]
+Role: MessageRole.AGENT, Content: [{'type': 'text', 'text': {'value': "I don't know.", 'annotations': []}}]
+
+
+query_text = "Find images with a building that has a circular roof."
+Role: MessageRole.USER, Content: [{'type': 'text', 'text': {'value': 'Are there any buildings with circular roofs?', 'annotations': []}}]
+Role: MessageRole.AGENT, Content: [{'type': 'text', 'text': {'value': 'Yes, there are references to buildings with circular roofs. For example, one image describes "a circular structure with a metal frame"【3:0†source】. Additionally, another image notes "an aerial view of a circular structure"【3:1†source】. If you need more specific details about these images, please let me know!', 'annotations': [{'type': 'url_citation', 'text': '【3:0†source】', 'start_index': 134, 'end_index': 146, 'url_citation': {'url': 'doc_0', 'title': 'doc_0'}}, {'type': 'url_citation', 'text': '【3:1†source】', 'start_index': 222, 'end_index': 234, 'url_citation': {'url': 'doc_1', 'title': 'doc_1'}}]}}]
+
+
+query_text = "How many times did the drone capturing the images fly over the building with distinct circular roof structure that you mentioned in the image with id 000552?"
+Role: MessageRole.USER, Content: [{'type': 'text', 'text': {'value': 'How many times did the drone capturing the images fly over the building with distinct circular roof structure that you mentioned in the image with id 000552?', 'annotations': []}}]
+Role: MessageRole.AGENT, Content: [{'type': 'text', 'text': {'value': "I don't know.", 'annotations': []}}]
+
+query_text = "How many images are similar to the one with the id 000552 that has a building with distinct circular roof structure?"
+Role: MessageRole.USER, Content: [{'type': 'text', 'text': {'value': 'How many images are similar to the one with the id 000552 that has a building with distinct circular roof structure?', 'annotations': []}}]
+Role: MessageRole.AGENT, Content: [{'type': 'text', 'text': {'value': 'There are 5 images similar to the one with the id 000552, which features a building with a distinct circular roof structure. The IDs of these images are:\n\n1. 011541【3:0†source】\n2. 015899【3:1†source】\n3. 015446【3:2†source】\n4. 015583【3:3†source】\n5. 017115【3:4†source】', 'annotations': [{'type': 'url_citation', 'text': '【3:0†source】', 'start_index': 164, 'end_index': 176, 'url_citation': {'url': 'doc_0', 'title': 'doc_0'}}, {'type': 'url_citation', 'text': '【3:1†source】', 'start_index': 186, 'end_index': 198, 'url_citation': {'url': 'doc_1', 'title': 'doc_1'}}, {'type': 'url_citation', 'text': '【3:2†source】', 'start_index': 208, 'end_index': 220, 'url_citation': {'url': 'doc_2', 'title': 'doc_2'}}, {'type': 'url_citation', 'text': '【3:3†source】', 'start_index': 230, 'end_index': 242, 'url_citation': {'url': 'doc_3', 'title': 'doc_3'}}, {'type': 'url_citation', 'text': '【3:4†source】', 'start_index': 252, 'end_index': 264, 'url_citation': {'url': 'doc_4', 'title': 'doc_4'}}]}}]
+
+
+query_text="Find images with dedicated bicycle crossings at street intersections."
+Role: MessageRole.USER, Content: [{'type': 'text', 'text': {'value': 'Find images with dedicated bicycle crossings at street intersections.', 'annotations': []}}]
+Role: MessageRole.AGENT, Content: [{'type': 'text', 'text': {'value': "I don't know.", 'annotations': []}}]
+
+
+query_text="Find images with green bicycle crossing signs at street intersections."
+Role: MessageRole.USER, Content: [{'type': 'text', 'text': {'value': 'Find images with green bicycle crossing signs at street intersections.', 'annotations': []}}]
+Role: MessageRole.AGENT, Content: [{'type': 'text', 'text': {'value': "I don't know.", 'annotations': []}}]
+
+
+query_text="Find images with big parking lots."
+Role: MessageRole.USER, Content: [{'type': 'text', 'text': {'value': 'Find images with big parking lots.', 'annotations': []}}], Metadata: {}
+id,object,created_at,assistant_id,thread_id,run_id,role,content,attachments,metadata
+Role: MessageRole.AGENT, Content: [{'type': 'text', 'text': {'value': "Here are some images of big parking lots:\n\n1. **Image ID**: 015420 - Description: An aerial view of a city featuring cars and buildings, with noticeable parking areas. 【3:0†source】.\n2. **Image ID**: 011609 - Description: A bird's eye view of a building with a visible aerial view of a parking lot. 【3:1†source】.\n3. **Image ID**: 012395 - Description: An aerial view of a street with cars and buildings, including areas where cars are parked. 【3:2†source】.\n\nIf you need further details or additional images, let me know!", 'annotations': [{'type': 'url_citation', 'text': '【3:0†source】', 'start_index': 168, 'end_index': 180, 'url_citation': {'url': 'doc_0', 'title': 'doc_0'}}, {'type': 'url_citation', 'text': '【3:1†source】', 'start_index': 298, 'end_index': 310, 'url_citation': {'url': 'doc_1', 'title': 'doc_1'}}, {'type': 'url_citation', 'text': '【3:2†source】', 'start_index': 442, 'end_index': 454, 'url_citation': {'url': 'doc_2', 'title': 'doc_2'}}]}}], Metadata: {}
