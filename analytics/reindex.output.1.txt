@@ -1,4 +1,0 @@
-<Response [409]>
-Video insights:
-==================================================
-{'ErrorType': 'VIDEO_INDEXING_IN_PROGRESS', 'Message': "Video 'lwxjba8wy3' is in middle of being indexed. Trace id: '0b2b7eb0-adab-4a50-9dd8-b7984e7c715d'."}
