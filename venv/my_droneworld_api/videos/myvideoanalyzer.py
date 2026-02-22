@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import logging
 from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from azure.ai.agents import AgentsClient
@@ -38,7 +39,15 @@ from typing import Any, Callable, Set, Dict, List, Optional
 import os, time, sys
 sys.path.insert(0, os.path.abspath("."))
 load_dotenv(override=True)
-
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 vision_api_key = settings.AZURE_AI_VISION_API_KEY
 vision_api_version = settings.VISION_API_VERSION
 vision_region = settings.AZURE_AI_VISION_REGION
@@ -100,7 +109,7 @@ def get_agent_id(agent_name):
             agent = entry
             break;
     if not agent:
-        print(f"Agent not found: {agent_name}")
+        logger.warning(f"Agent not found: {agent_name}")
         return None
     # Find the agent ID for the given name
     agent_id = agent.id
@@ -110,11 +119,11 @@ def ask_agent(agent_name, query_text):
     agent_id = get_agent_id(agent_name)
     if not agent_id:
         return None
-    print(f"Agent ID for {agent_name} is {agent_id}")
+    logger.info(f"Agent ID for {agent_name} is {agent_id}")
 
     project_client = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential()) 
     thread = project_client.agents.threads.create()
-    print(f"Created thread, ID: {thread.id}")
+    logger.info(f"Created thread, ID: {thread.id}")
 
     message = project_client.agents.messages.create(
         thread_id=thread.id,
@@ -127,7 +136,7 @@ def ask_agent(agent_name, query_text):
         agent_id=agent_id)
 
     if run.status == "failed":
-        print(f"Run failed: {run.last_error}")
+        logger.error(f"Run failed: {run.last_error}")
         return None
     else:
         messages = project_client.agents.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
@@ -139,12 +148,12 @@ def ask_agent_for_url(agent_name, query_text):
             return None
         for message in messages:
             if message.text_messages:
-                print(f"{message.role}: {message.text_messages[-1].text.value}")
+                logger.info(f"{message.role}: {message.text_messages[-1].text.value}")
                 for item in message.text_messages:
                     if item and item.text:
                         for annotation in item.text.annotations:
                             if annotation.type == "url_citation":
-                                print(f"url={annotation.url_citation.url}")
+                                logger.info(f"url={annotation.url_citation.url}")
                                 return  annotation.url_citation.url
 
 
@@ -160,7 +169,7 @@ def delete_all_threads_for_agent(agent_name):
             agent = entry
             break;
     if not agent:
-        print(f"cannot find threads to delete for agent: {agent_name}")
+        logger.warning(f"cannot find threads to delete for agent: {agent_name}")
         return
     # Find the agent ID for the given name
     agent_id = agent.id
@@ -170,7 +179,7 @@ def delete_all_threads_for_agent(agent_name):
     # Iterate and delete each thread
     for thread in threads:
         agents_client.threads.delete(thread_id=thread.id)
-        print(f"Deleted thread ID: {thread.id}")
+        logger.info(f"Deleted thread ID: {thread.id}")
     return
         
 # all agentic_framework requires a knowledgeAgent that can automate query decomposition and rewriting, refer: https://learn.microsoft.com/en-us/azure/search/search-agentic-retrieval-how-to-pipeline?tabs=search-perms
@@ -180,24 +189,24 @@ def run_connected_agent(query_text, account_id):
     index_client = SearchIndexClient(endpoint=search_endpoint, credential=AzureKeyCredential(search_api_key))  
     agent = None
     for index_agent in index_client.list_agents():
-        print(f"Agent={index_agent.name}")
+        logger.info(f"Agent={index_agent.name}")
         if index_agent.name == search_agent_name:
             # index_client.delete_agent(agent=index_agent)
-            # print(f"{search_agent_name} deleted successfully")
+            # logger.info(f"{search_agent_name} deleted successfully")
             agent = index_agent
-    print(f"Found Agent={agent}")
+    logger.info(f"Found Agent={agent}")
     if  agent is None:
-        print("no agent found")
+        logger.info("no agent found")
         # create a KnowledgeSource first then a search index agent with that knowledge source
         knowledge_source = None
         for source in index_client.list_knowledge_sources():
             if source.name == index_name:
-                print(f"Found Knowledge source: {source}")
+                logger.info(f"Found Knowledge source: {source}")
                 # index_client.delete_knowledge_source(knowledge_source=source.name)
                 knowledge_source = source
                 
         if not knowledge_source:
-            print(f"creating a knowledge_source with name: {index_name}")
+            logger.info(f"creating a knowledge_source with name: {index_name}")
             knowledge_source = SearchIndexKnowledgeSource(
                 name=index_name, 
                 search_index_parameters=SearchIndexKnowledgeSourceParameters(
@@ -244,8 +253,8 @@ def run_connected_agent(query_text, account_id):
             # connected_agents = [connected_agent_specialized_tasks]
         )
         r = index_client.create_or_update_agent(agent=agent) 
-        print(f"AI Knowledge agent '{search_agent_name}' created or updated successfully: {r}")
-    print(agent)
+        logger.info(f"AI Knowledge agent '{search_agent_name}' created or updated successfully: {r}")
+    logger.info(agent)
 
 
     instructions = ["""
@@ -265,7 +274,7 @@ def run_connected_agent(query_text, account_id):
         "role": "user",
         "content": query_text
     })
-    print([msg["content"] for msg in messages if msg["role"] != "system"])
+    logger.info([msg["content"] for msg in messages if msg["role"] != "system"])
     # retrieval_result = agent_client.retrieve(
         # retrieval_request=KnowledgeAgentRetrievalRequest(
             # messages=[KnowledgeAgentMessage(role=msg["role"], content=[KnowledgeAgentMessageTextContent(text=msg["content"])]) for msg in messages if msg["role"] != "system"],
@@ -283,8 +292,8 @@ def run_connected_agent(query_text, account_id):
         ]
     )
     retrieval_result = agent_client.retrieve(retrieval_request=retrieval_request, api_version=api_version)
-    print([response for response in retrieval_result.response])
-    print(f"Result={retrieval_result.response[0].content[0].text}")
+    logger.info([response for response in retrieval_result.response])
+    logger.info(f"Result={retrieval_result.response[0].content[0].text}")
     return retrieval_result.response[0].content[0].text
 
 
@@ -316,7 +325,7 @@ def knowledge_base_search(query_text, account_id):
     connected_agent = None
     ai_search_agent = None
     for entry in project_client.agents.list_agents():
-        print(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
+        logger.info(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
         if entry.name == fn_agent_name:
             connected_agent = entry
         if entry.name == connected_agent_name:
@@ -327,23 +336,23 @@ def knowledge_base_search(query_text, account_id):
         # Listing Agent: id: asst_lsH8uwS4hrg4v1lRpXm6sdtR, name: chat-agent-in-a-team, model: gpt-4o-mini
         # Listing Agent: id: asst_JI9VWjdav3To7jjGUROejGkV, name: object-search-agent, model: gpt-4o-mini
     for deployment in project_client.deployments.list():
-        print(f"Deployment: type:{deployment.type}, name:{deployment.name}")
+        logger.info(f"Deployment: type:{deployment.type}, name:{deployment.name}")
         if "id" in deployment and deployment.id:
-            print(f"Deployment_id: {deployment.id}")
+            logger.info(f"Deployment_id: {deployment.id}")
             # Deployment: type:ModelDeployment, name:gpt-4o-mini
             # Deployment: type:ModelDeployment, name:text-embedding-ada-002
     model_deployment_id = "/subscriptions/656e67c6-f810-4ea6-8b89-636dd0b6774c/resourceGroups/rg-ctl-2/providers/Microsoft.CognitiveServices/accounts/found-vision-1/projects/droneimage/deployments/gpt-4o-mini"
     for conn in project_client.connections.list():
-        # print(f"Connection: id:{conn.id}, name:{conn.name}, type: {conn.type}, target: {conn.target}, is_default: {conn.is_default}")
+        # logger.info(f"Connection: id:{conn.id}, name:{conn.name}, type: {conn.type}, target: {conn.target}, is_default: {conn.is_default}")
         # Connection:id:/subscriptions/656e67c6-f810-4ea6-8b89-636dd0b6774c/resourceGroups/rg-ctl-2/providers/Microsoft.CognitiveServices/accounts/found-vision-1/projects/droneimage/connections/srchvision01, name:srchvision01, type: ConnectionType.AZURE_AI_SEARCH, target: https://srch-vision-01.search.windows.net/, is_default: True
         # Connection: id:/subscriptions/656e67c6-f810-4ea6-8b89-636dd0b6774c/resourceGroups/rg-ctl-2/providers/Microsoft.CognitiveServices/accounts/found-vision-1/projects/droneimage/connections/LogicApps_Tool_Connection_fnagentaction_7461, name:LogicApps_Tool_Connection_fnagentaction_7461, type: ConnectionType.CUSTOM, target: _, is_default: True
         if conn.name == search_connection_name and conn.connection_type == ConnectionType.AZURE_AI_SEARCH:
             existing_connection = conn
-            print(f"Found existing knowledge source connection id: {conn.name}")
+            logger.info(f"Found existing knowledge source connection id: {conn.name}")
             break
     """        
     if not existing_connection:
-        print(f"Creating connection to knowledge source by name: {search_connection_name}")
+        logger.info(f"Creating connection to knowledge source by name: {search_connection_name}")
         created_connection = project_client.connections.create(
             name=search_connection_name,
             connection_type=ConnectionType.AZURE_AI_SEARCH,
@@ -356,7 +365,7 @@ def knowledge_base_search(query_text, account_id):
     search_connection_id = existing_connection.id
     """
     search_connection_id = connection_id
-    # print(f"connection-id: {search_connection_id}")
+    # logger.info(f"connection-id: {search_connection_id}")
     # Initialize search tool definition
     ai_search_tool = AzureAISearchTool(
         index_connection_id=search_connection_id,
@@ -366,7 +375,7 @@ def knowledge_base_search(query_text, account_id):
         filter = "account_id eq '" + account_id + "'"
         # filter="startwith(account_id,'" + account_id + "')"
     )
-    print(f"ai_search_tool created for_agent")
+    logger.info(f"ai_search_tool created for_agent")
     connected_agent_instructions = "If the search over the Azure AI search index does not provide a conclusive answer for the user query, then answer the question by finding a suitable function, passing the question to the function, evaluating it and relaying the response from the function. If you can't find a suitable function, default to the ask_perplexity function included in your tools."
     connected_agent_tool = ConnectedAgentTool(
         id=connected_agent.id, 
@@ -382,7 +391,7 @@ def knowledge_base_search(query_text, account_id):
             if entity.name == connected_agent_name:  
                 agent = entity
         if  agent is None:
-            print("no agent found")
+            logger.info("no agent found")
             agent = agents_client.create_agent(
                 model="gpt-4o-mini",
                 name=connected_agent_name,
@@ -392,20 +401,20 @@ def knowledge_base_search(query_text, account_id):
                 top_p=1
             )
             # """
-            #print(f"Created agent, ID: {agent.id}")
-        print(f"Agent found, ID: {agent.id}") 
+            #logger.info(f"Created agent, ID: {agent.id}")
+        logger.info(f"Agent found, ID: {agent.id}") 
         thread = agents_client.threads.create()
-        print(f"Created thread, ID: {thread.id}")
+        logger.info(f"Created thread, ID: {thread.id}")
 
         message = agents_client.messages.create(
             thread_id=thread.id,
             role="user",
             content=query_text,
         )
-        print(f"Created message, ID: {message.id}")
+        logger.info(f"Created message, ID: {message.id}")
 
         run = agents_client.runs.create(thread_id=thread.id, agent_id=agent.id)
-        print(f"Created run, ID: {run.id}")
+        logger.info(f"Created run, ID: {run.id}")
 
         while run.status in ["queued", "in_progress", "requires_action"]:
             time.sleep(1)
@@ -414,19 +423,19 @@ def knowledge_base_search(query_text, account_id):
             if run.status == "requires_action" and isinstance(run.required_action, SubmitToolOutputsAction):
                 tool_calls = run.required_action.submit_tool_outputs.tool_calls
                 if not tool_calls:
-                    print("No tool calls provided - cancelling run")
+                    logger.info("No tool calls provided - cancelling run")
                     agents_client.runs.cancel(thread_id=thread.id, run_id=run.id)
                     break
 
                 tool_outputs = []
                 for tool_call in tool_calls:
-                    print(f"Tool Call id: {tool_call.id}, type:{tool_call.type}")
+                    logger.info(f"Tool Call id: {tool_call.id}, type:{tool_call.type}")
                     if isinstance(tool_call, RunStepAzureAISearchToolCall):
-                        #print("Is an instance of RequiredFunctionToolCall")
+                        #logger.info("Is an instance of RequiredFunctionToolCall")
                         try:
-                            #print(f"Executing tool call: {tool_call}")
+                            #logger.info(f"Executing tool call: {tool_call}")
                             output = ai_search_tool.execute(tool_call)
-                            print(f"Output={output}")
+                            logger.info(f"Output={output}")
                             answer = output
                             tool_outputs.append(
                                 ToolOutput(
@@ -435,41 +444,41 @@ def knowledge_base_search(query_text, account_id):
                                 )
                             )
                         except Exception as e:
-                            print(f"Error executing tool_call {tool_call.id}: {e}")
+                            logger.info(f"Error executing tool_call {tool_call.id}: {e}")
                     else:
-                        print(f"{tool_call} skipped.")
+                        logger.info(f"{tool_call} skipped.")
 
-                print(f"Tool outputs: {tool_outputs}")
+                logger.info(f"Tool outputs: {tool_outputs}")
                 if tool_outputs:
                     agents_client.runs.submit_tool_outputs(thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs)
                 else:
-                    print(f"No tool output.")
+                    logger.info(f"No tool output.")
             else:
-                print(f"Waiting: {run}")
+                logger.info(f"Waiting: {run}")
 
-            print(f"Current run status: {run.status}")
+            logger.info(f"Current run status: {run.status}")
 
-        print(f"Run completed with status: {run.status} and details {run}")
+        logger.info(f"Run completed with status: {run.status} and details {run}")
 
         # Delete the agent when done
         # agents_client.delete_agent(agent.id)
-        # print("Deleted agent")
+        # logger.info("Deleted agent")
 
         # Fetch and log all messages
         
         messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
         for msg in messages:
-            print(f"msg={msg}")
+            logger.info(f"msg={msg}")
             if msg.text_messages:
                 last_text = msg.text_messages[-1]
-                print(f"{msg.role}: {last_text.text.value}")
+                logger.info(f"{msg.role}: {last_text.text.value}")
                 answer = last_text.text.value
                 citations = []
                 for annotation in last_text.text.annotations:
                     citations += [annotation.url_citation.url]
-        print(f"answer={answer}")
+        logger.info(f"answer={answer}")
         for entry in project_client.agents.list_agents():
-            print(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
+            logger.info(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
         return answer
         
 
@@ -514,7 +523,7 @@ def run_function_tools(query_text, account_id):
     with agents_client:
         # agent = agents_client.get_agent("asst_v2Hj4CJ5wEW2gqGwG44YtbD4") # fn_agent_name
         if  agent is None:
-            print("no agent found")
+            logger.info("no agent found")
             # 
             # Create an agent and run user's request with function calls
             # agent = agents_client.get_agent(agent_id="asst_qyMFcz1BnU0BS0QUmhxAAyFk")
@@ -528,20 +537,20 @@ def run_function_tools(query_text, account_id):
                 top_p=1
             )
             # """
-            #print(f"Created agent, ID: {agent.id}")
-        print(f"Agent found, ID: {agent.id}") 
+            #logger.info(f"Created agent, ID: {agent.id}")
+        logger.info(f"Agent found, ID: {agent.id}") 
         thread = agents_client.threads.create()
-        print(f"Created thread, ID: {thread.id}")
+        logger.info(f"Created thread, ID: {thread.id}")
 
         message = agents_client.messages.create(
             thread_id=thread.id,
             role="user",
             content=query_text,
         )
-        #print(f"Created message, ID: {message.id}")
+        #logger.info(f"Created message, ID: {message.id}")
 
         run = agents_client.runs.create(thread_id=thread.id, agent_id=agent.id)
-        #print(f"Created run, ID: {run.id}")
+        #logger.info(f"Created run, ID: {run.id}")
 
         while run.status in ["queued", "in_progress", "requires_action"]:
             time.sleep(1)
@@ -550,18 +559,18 @@ def run_function_tools(query_text, account_id):
             if run.status == "requires_action" and isinstance(run.required_action, SubmitToolOutputsAction):
                 tool_calls = run.required_action.submit_tool_outputs.tool_calls
                 if not tool_calls:
-                    print("No tool calls provided - cancelling run")
+                    logger.info("No tool calls provided - cancelling run")
                     agents_client.runs.cancel(thread_id=thread.id, run_id=run.id)
                     break
 
                 tool_outputs = []
                 for tool_call in tool_calls:
                     if isinstance(tool_call, RequiredFunctionToolCall):
-                        #print("Is an instance of RequiredFunctionToolCall")
+                        #logger.info("Is an instance of RequiredFunctionToolCall")
                         try:
-                            #print(f"Executing tool call: {tool_call}")
+                            #logger.info(f"Executing tool call: {tool_call}")
                             output = functions.execute(tool_call)
-                            print(f"Output={output}")
+                            logger.info(f"Output={output}")
                             answer = output
                             tool_outputs.append(
                                 ToolOutput(
@@ -570,25 +579,25 @@ def run_function_tools(query_text, account_id):
                                 )
                             )
                         except Exception as e:
-                            print(f"Error executing tool_call {tool_call.id}: {e}")
+                            logger.info(f"Error executing tool_call {tool_call.id}: {e}")
                     else:
-                        print(f"{tool_call} skipped.")
+                        logger.info(f"{tool_call} skipped.")
 
-                print(f"Tool outputs: {tool_outputs}")
+                logger.info(f"Tool outputs: {tool_outputs}")
                 if tool_outputs:
                     agents_client.runs.submit_tool_outputs(thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs)
                 else:
-                    print(f"No tool output.")
+                    logger.info(f"No tool output.")
             else:
-                print(f"Waiting: {run}")
+                logger.info(f"Waiting: {run}")
 
-            print(f"Current run status: {run.status}")
+            logger.info(f"Current run status: {run.status}")
 
-        print(f"Run completed with status: {run.status} and details {run}")
+        logger.info(f"Run completed with status: {run.status} and details {run}")
 
         # Delete the agent when done
         # agents_client.delete_agent(agent.id)
-        # print("Deleted agent")
+        # logger.info("Deleted agent")
 
         # Fetch and log all messages
         """
@@ -596,10 +605,10 @@ def run_function_tools(query_text, account_id):
         for msg in messages:
             if msg.text_messages:
                 last_text = msg.text_messages[-1]
-                print(f"{msg.role}: {last_text.text.value}")
+                logger.info(f"{msg.role}: {last_text.text.value}")
                 return last_text.text.value
         """
-        # print(f"answer={answer}")
+        # logger.info(f"answer={answer}")
         return answer
         
 
@@ -624,7 +633,7 @@ def run_analyzer_tools(query_text, account_id):
     with agents_client:
         # agent = agents_client.get_agent("asst_v2Hj4CJ5wEW2gqGwG44YtbD4") # tool_agent_name
         if  agent is None:
-            print("no agent found")
+            logger.info("no agent found")
             # 
             # Create an agent and run user's request with function calls
             # agent = agents_client.get_agent(agent_id="asst_qyMFcz1BnU0BS0QUmhxAAyFk")
@@ -638,20 +647,20 @@ def run_analyzer_tools(query_text, account_id):
                 top_p=1
             )
             # """
-            #print(f"Created agent, ID: {agent.id}")
-        print(f"Agent found, ID: {agent.id}") 
+            #logger.info(f"Created agent, ID: {agent.id}")
+        logger.info(f"Agent found, ID: {agent.id}") 
         thread = agents_client.threads.create()
-        print(f"Created thread, ID: {thread.id}")
+        logger.info(f"Created thread, ID: {thread.id}")
 
         message = agents_client.messages.create(
             thread_id=thread.id,
             role="user",
             content=query_text,
         )
-        #print(f"Created message, ID: {message.id}")
+        #logger.info(f"Created message, ID: {message.id}")
 
         run = agents_client.runs.create(thread_id=thread.id, agent_id=agent.id)
-        #print(f"Created run, ID: {run.id}")
+        #logger.info(f"Created run, ID: {run.id}")
 
         while run.status in ["queued", "in_progress", "requires_action"]:
             time.sleep(1)
@@ -660,18 +669,18 @@ def run_analyzer_tools(query_text, account_id):
             if run.status == "requires_action" and isinstance(run.required_action, SubmitToolOutputsAction):
                 tool_calls = run.required_action.submit_tool_outputs.tool_calls
                 if not tool_calls:
-                    print("No tool calls provided - cancelling run")
+                    logger.info("No tool calls provided - cancelling run")
                     agents_client.runs.cancel(thread_id=thread.id, run_id=run.id)
                     break
 
                 tool_outputs = []
                 for tool_call in tool_calls:
                     if isinstance(tool_call, RequiredFunctionToolCall):
-                        #print("Is an instance of RequiredFunctionToolCall")
+                        #logger.info("Is an instance of RequiredFunctionToolCall")
                         try:
-                            #print(f"Executing tool call: {tool_call}")
+                            #logger.info(f"Executing tool call: {tool_call}")
                             output = functions.execute(tool_call)
-                            print(f"Output={output}")
+                            logger.info(f"Output={output}")
                             answer = output
                             tool_outputs.append(
                                 ToolOutput(
@@ -680,25 +689,25 @@ def run_analyzer_tools(query_text, account_id):
                                 )
                             )
                         except Exception as e:
-                            print(f"Error executing tool_call {tool_call.id}: {e}")
+                            logger.info(f"Error executing tool_call {tool_call.id}: {e}")
                     else:
-                        print(f"{tool_call} skipped.")
+                        logger.info(f"{tool_call} skipped.")
 
-                print(f"Tool outputs: {tool_outputs}")
+                logger.info(f"Tool outputs: {tool_outputs}")
                 if tool_outputs:
                     agents_client.runs.submit_tool_outputs(thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs)
                 else:
-                    print(f"No tool output.")
+                    logger.info(f"No tool output.")
             else:
-                print(f"Waiting: {run}")
+                logger.info(f"Waiting: {run}")
 
-            print(f"Current run status: {run.status}")
+            logger.info(f"Current run status: {run.status}")
 
-        print(f"Run completed with status: {run.status} and details {run}")
+        logger.info(f"Run completed with status: {run.status} and details {run}")
 
         # Delete the agent when done
         # agents_client.delete_agent(agent.id)
-        # print("Deleted agent")
+        # logger.info("Deleted agent")
 
         # Fetch and log all messages
         """
@@ -706,10 +715,10 @@ def run_analyzer_tools(query_text, account_id):
         for msg in messages:
             if msg.text_messages:
                 last_text = msg.text_messages[-1]
-                print(f"{msg.role}: {last_text.text.value}")
+                logger.info(f"{msg.role}: {last_text.text.value}")
                 return last_text.text.value
         """
-        # print(f"answer={answer}")
+        # logger.info(f"answer={answer}")
         return answer
 
 
@@ -752,7 +761,7 @@ def synthesize_from_chat_agent(query_text, account_id):
     with agents_client:
         # agent = agents_client.get_agent("asst_lsH8uwS4hrg4v1lRpXm6sdtR") # chat_agent_name
         if  agent is None:
-            print("no agent found")
+            logger.info("no agent found")
             api = OpenApiTool(name=chat_agent_name,description="consolidator of answers", spec={}, auth=OpenApiConnectionAuthDetails())
             # 
             # Create an agent and run user's request with function calls
@@ -767,20 +776,20 @@ def synthesize_from_chat_agent(query_text, account_id):
                 top_p=1
             )
             # """
-            #print(f"Created agent, ID: {agent.id}")
-        print(f"Agent found, ID: {agent.id}") 
+            #logger.info(f"Created agent, ID: {agent.id}")
+        logger.info(f"Agent found, ID: {agent.id}") 
         thread = agents_client.threads.create()
-        print(f"Created thread, ID: {thread.id}")
+        logger.info(f"Created thread, ID: {thread.id}")
 
         message = agents_client.messages.create(
             thread_id=thread.id,
             role="user",
             content=synthesis_response,
         )
-        #print(f"Created message, ID: {message.id}")
+        #logger.info(f"Created message, ID: {message.id}")
 
         run = agents_client.runs.create(thread_id=thread.id, agent_id=agent.id)
-        #print(f"Created run, ID: {run.id}")
+        #logger.info(f"Created run, ID: {run.id}")
 
         while run.status in ["queued", "in_progress", "requires_action"]:
             time.sleep(1)
@@ -789,19 +798,19 @@ def synthesize_from_chat_agent(query_text, account_id):
             if run.status == "requires_action" and isinstance(run.required_action, SubmitToolOutputsAction):
                 tool_calls = run.required_action.submit_tool_outputs.tool_calls
                 if not tool_calls:
-                    print("No tool calls provided - cancelling run")
+                    logger.info("No tool calls provided - cancelling run")
                     agents_client.runs.cancel(thread_id=thread.id, run_id=run.id)
                     break
 
                 tool_outputs = []
                 for tool_call in tool_calls:
-                    print(f"tool_call={tool_call}")
+                    logger.info(f"tool_call={tool_call}")
                     if isinstance(tool_call, RunStepOpenAPIToolCall):
-                        #print("Is an instance of RunStepOpenAPIToolCall")
+                        #logger.info("Is an instance of RunStepOpenAPIToolCall")
                         try:
-                            #print(f"Executing tool call: {tool_call}")
+                            #logger.info(f"Executing tool call: {tool_call}")
                             output = api.execute(tool_call)
-                            print(f"Output={output}")
+                            logger.info(f"Output={output}")
                             answer = output
                             tool_outputs.append(
                                 ToolOutput(
@@ -810,34 +819,34 @@ def synthesize_from_chat_agent(query_text, account_id):
                                 )
                             )
                         except Exception as e:
-                            print(f"Error executing tool_call {tool_call.id}: {e}")
+                            logger.info(f"Error executing tool_call {tool_call.id}: {e}")
                     else:
-                        print(f"{tool_call} skipped.")
+                        logger.info(f"{tool_call} skipped.")
 
-                print(f"Tool outputs: {tool_outputs}")
+                logger.info(f"Tool outputs: {tool_outputs}")
                 if tool_outputs:
                     agents_client.runs.submit_tool_outputs(thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs)
                 else:
-                    print(f"No tool output.")
+                    logger.info(f"No tool output.")
             else:
-                print(f"Waiting: {run}")
+                logger.info(f"Waiting: {run}")
 
-            print(f"Current run status: {run.status}")
+            logger.info(f"Current run status: {run.status}")
 
-        print(f"Run completed with status: {run.status} and details {run}")
+        logger.info(f"Run completed with status: {run.status} and details {run}")
 
         # Delete the agent when done
         # agents_client.delete_agent(agent.id)
-        # print("Deleted agent")
+        # logger.info("Deleted agent")
 
         # Fetch and log all messages
         messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
         for msg in messages:
             if msg.text_messages:
                 last_text = msg.text_messages[-1]
-                print(f"{msg.role}: {last_text.text.value}")
+                logger.info(f"{msg.role}: {last_text.text.value}")
                 answer = last_text.text.value
-        # print(f"answer={answer}")
+        # logger.info(f"answer={answer}")
     if not answer:
         answer = synthesis_response
     return answer 
@@ -885,7 +894,7 @@ def file_agent_search(query_text, account_id):
     connected_agent = None
     ai_search_agent = None
     for entry in project_client.agents.list_agents():
-        print(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
+        logger.info(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
         if entry.name == fn_agent_name:
             connected_agent = entry
         if entry.name == connected_agent_name:
@@ -896,23 +905,23 @@ def file_agent_search(query_text, account_id):
         # Listing Agent: id: asst_lsH8uwS4hrg4v1lRpXm6sdtR, name: chat-agent-in-a-team, model: gpt-4o-mini
         # Listing Agent: id: asst_JI9VWjdav3To7jjGUROejGkV, name: object-search-agent, model: gpt-4o-mini
     for deployment in project_client.deployments.list():
-        print(f"Deployment: type:{deployment.type}, name:{deployment.name}")
+        logger.info(f"Deployment: type:{deployment.type}, name:{deployment.name}")
         if "id" in deployment and deployment.id:
-            print(f"Deployment_id: {deployment.id}")
+            logger.info(f"Deployment_id: {deployment.id}")
             # Deployment: type:ModelDeployment, name:gpt-4o-mini
             # Deployment: type:ModelDeployment, name:text-embedding-ada-002
     model_deployment_id = "/subscriptions/656e67c6-f810-4ea6-8b89-636dd0b6774c/resourceGroups/rg-ctl-2/providers/Microsoft.CognitiveServices/accounts/found-vision-1/projects/droneimage/deployments/gpt-4o-mini"
     for conn in project_client.connections.list():
-        # print(f"Connection: id:{conn.id}, name:{conn.name}, type: {conn.type}, target: {conn.target}, is_default: {conn.is_default}")
+        # logger.info(f"Connection: id:{conn.id}, name:{conn.name}, type: {conn.type}, target: {conn.target}, is_default: {conn.is_default}")
         # Connection:id:/subscriptions/656e67c6-f810-4ea6-8b89-636dd0b6774c/resourceGroups/rg-ctl-2/providers/Microsoft.CognitiveServices/accounts/found-vision-1/projects/droneimage/connections/srchvision01, name:srchvision01, type: ConnectionType.AZURE_AI_SEARCH, target: https://srch-vision-01.search.windows.net/, is_default: True
         # Connection: id:/subscriptions/656e67c6-f810-4ea6-8b89-636dd0b6774c/resourceGroups/rg-ctl-2/providers/Microsoft.CognitiveServices/accounts/found-vision-1/projects/droneimage/connections/LogicApps_Tool_Connection_fnagentaction_7461, name:LogicApps_Tool_Connection_fnagentaction_7461, type: ConnectionType.CUSTOM, target: _, is_default: True
         if conn.name == search_connection_name and conn.connection_type == ConnectionType.AZURE_AI_SEARCH:
             existing_connection = conn
-            print(f"Found existing knowledge source connection id: {conn.name}")
+            logger.info(f"Found existing knowledge source connection id: {conn.name}")
             break
     """        
     if not existing_connection:
-        print(f"Creating connection to knowledge source by name: {search_connection_name}")
+        logger.info(f"Creating connection to knowledge source by name: {search_connection_name}")
         created_connection = project_client.connections.create(
             name=search_connection_name,
             connection_type=ConnectionType.AZURE_AI_SEARCH,
@@ -925,7 +934,7 @@ def file_agent_search(query_text, account_id):
     search_connection_id = existing_connection.id
     """
     search_connection_id = connection_id
-    # print(f"connection-id: {search_connection_id}")
+    # logger.info(f"connection-id: {search_connection_id}")
     # Initialize search tool definition
     ai_search_tool = AzureAISearchTool(
         index_connection_id=search_connection_id,
@@ -935,7 +944,7 @@ def file_agent_search(query_text, account_id):
         filter = "account_id eq '" + account_id + "'"
         # filter="startwith(account_id,'" + account_id + "')"
     )
-    print(f"ai_search_tool created for_agent")
+    logger.info(f"ai_search_tool created for_agent")
     connected_agent_instructions = "If the search over the Azure AI search index does not provide a conclusive answer for the user query, then answer the question by finding a suitable function, passing the question to the function, evaluating it and relaying the response from the function. If you can't find a suitable function, default to the ask_perplexity function included in your tools."
     connected_agent_tool = ConnectedAgentTool(
         id=connected_agent.id, 
@@ -951,7 +960,7 @@ def file_agent_search(query_text, account_id):
             if entity.name == connected_agent_name:  
                 agent = entity
         if  agent is None:
-            print("no agent found")
+            logger.info("no agent found")
             agent = agents_client.create_agent(
                 model="gpt-4o-mini",
                 name=connected_agent_name,
@@ -961,20 +970,20 @@ def file_agent_search(query_text, account_id):
                 top_p=1
             )
             # """
-            #print(f"Created agent, ID: {agent.id}")
-        print(f"Agent found, ID: {agent.id}") 
+            #logger.info(f"Created agent, ID: {agent.id}")
+        logger.info(f"Agent found, ID: {agent.id}") 
         thread = agents_client.threads.create()
-        print(f"Created thread, ID: {thread.id}")
+        logger.info(f"Created thread, ID: {thread.id}")
 
         message = agents_client.messages.create(
             thread_id=thread.id,
             role="user",
             content=query_text,
         )
-        print(f"Created message, ID: {message.id}")
+        logger.info(f"Created message, ID: {message.id}")
 
         run = agents_client.runs.create(thread_id=thread.id, agent_id=agent.id)
-        print(f"Created run, ID: {run.id}")
+        logger.info(f"Created run, ID: {run.id}")
 
         while run.status in ["queued", "in_progress", "requires_action"]:
             time.sleep(1)
@@ -983,19 +992,19 @@ def file_agent_search(query_text, account_id):
             if run.status == "requires_action" and isinstance(run.required_action, SubmitToolOutputsAction):
                 tool_calls = run.required_action.submit_tool_outputs.tool_calls
                 if not tool_calls:
-                    print("No tool calls provided - cancelling run")
+                    logger.info("No tool calls provided - cancelling run")
                     agents_client.runs.cancel(thread_id=thread.id, run_id=run.id)
                     break
 
                 tool_outputs = []
                 for tool_call in tool_calls:
-                    print(f"Tool Call id: {tool_call.id}, type:{tool_call.type}")
+                    logger.info(f"Tool Call id: {tool_call.id}, type:{tool_call.type}")
                     if isinstance(tool_call, RunStepAzureAISearchToolCall):
-                        #print("Is an instance of RequiredFunctionToolCall")
+                        #logger.info("Is an instance of RequiredFunctionToolCall")
                         try:
-                            #print(f"Executing tool call: {tool_call}")
+                            #logger.info(f"Executing tool call: {tool_call}")
                             output = ai_search_tool.execute(tool_call)
-                            print(f"Output={output}")
+                            logger.info(f"Output={output}")
                             answer = output
                             tool_outputs.append(
                                 ToolOutput(
@@ -1004,54 +1013,54 @@ def file_agent_search(query_text, account_id):
                                 )
                             )
                         except Exception as e:
-                            print(f"Error executing tool_call {tool_call.id}: {e}")
+                            logger.info(f"Error executing tool_call {tool_call.id}: {e}")
                     else:
-                        print(f"{tool_call} skipped.")
+                        logger.info(f"{tool_call} skipped.")
 
-                print(f"Tool outputs: {tool_outputs}")
+                logger.info(f"Tool outputs: {tool_outputs}")
                 if tool_outputs:
                     agents_client.runs.submit_tool_outputs(thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs)
                 else:
-                    print(f"No tool output.")
+                    logger.info(f"No tool output.")
             else:
-                print(f"Waiting: {run}")
+                logger.info(f"Waiting: {run}")
 
-            print(f"Current run status: {run.status}")
+            logger.info(f"Current run status: {run.status}")
 
-        print(f"Run completed with status: {run.status} and details {run}")
+        logger.info(f"Run completed with status: {run.status} and details {run}")
 
         # Delete the agent when done
         # agents_client.delete_agent(agent.id)
-        # print("Deleted agent")
+        # logger.info("Deleted agent")
 
         # Fetch and log all messages
         
         messages = agents_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)
         for msg in messages:
-            print(f"msg={msg}")
+            logger.info(f"msg={msg}")
             if msg.text_messages:
                 last_text = msg.text_messages[-1]
-                print(f"{msg.role}: {last_text.text.value}")
+                logger.info(f"{msg.role}: {last_text.text.value}")
                 answer = last_text.text.value
                 citations = []
                 for annotation in last_text.text.annotations:
                     citations += [annotation.url_citation.url]
-        print(f"answer={answer}")
+        logger.info(f"answer={answer}")
         for entry in project_client.agents.list_agents():
-            print(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
+            logger.info(f"Listing Agent: id: {entry.id}, name: {entry.name}, model: {entry.model}")
         return answer
 
 def object_in_scene_search(query_text, account_id, video_id = None):
     from .analyzer_functions import get_object_uri, get_scene_uri
     answer = None
     object_uri = get_object_uri(query_text, account_id, video_id)
-    print(f"object_uri={object_uri}")
+    logger.info(f"object_uri={object_uri}")
     scene_uri = get_scene_uri(query_text, account_id, video_id)
-    print(f"scene_uri={scene_uri}")
+    logger.info(f"scene_uri={scene_uri}")
     if object_uri and scene_uri:
         query_text = f"How many objects given by its image URI {object_uri} are found in the image given by its image URI {scene_uri} where the objects are described in the {query_text}?"
         from .analyzer_functions import ask_perplexity
         answer = ask_perplexity(query_text, account_id = "2", video_id = "1")
-        print(f"perplexity_response={answer}")
+        logger.info(f"perplexity_response={answer}")
         return answer
     return answer

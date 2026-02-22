@@ -1,6 +1,8 @@
 import requests
 import time
+import logging
 import os
+import sys
 import cv2
 import io
 import uuid
@@ -21,7 +23,15 @@ from dotenv import load_dotenv
 import json 
 import http.client
 import numpy as np
-
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 vision_api_key = settings.AZURE_AI_VISION_API_KEY
 vision_api_version = settings.VISION_API_VERSION
 vision_region = settings.AZURE_AI_VISION_REGION
@@ -68,13 +78,13 @@ def upload_and_index_video(access_token, accountId, video_file_path, video_url =
         video_path = parsed_url.path
         path_parts = video_path.split('/')
         video_name= path_parts[-1]
-        print(f"{video_path}/{video_name}")
+        logger.info(f"{video_path}/{video_name}")
     if video_file_path:
         video_name = trim_filename(os.path.basename(video_file_path))
-        print(f"video_file_path={video_file_path}/video_name={video_name}")
+        logger.info(f"video_file_path={video_file_path}/video_name={video_name}")
     # https://api-portal.videoindexer.ai/api-details#api=Operations&operation=Upload-Video
     url = f"{settings.AZURE_VIDEO_INDEXER_URL}/{settings.AZURE_VIDEO_INDEXER_REGION}/Accounts/{settings.AZURE_VIDEO_INDEXER_ACCOUNT}/Videos?name={video_name}&accessToken={access_token}" # &privacy=Private"
-    print(f"url={url}")
+    logger.info(f"url={url}")
     if video_url:
         import urllib
         encoded_url = urllib.parse.quote(video_url, safe='')
@@ -83,7 +93,7 @@ def upload_and_index_video(access_token, accountId, video_file_path, video_url =
         headers["Ocp-apim-subscription-key"]=""+settings.AZURE_VIDEO_INDEXER_API_KEY
         headers["Cache-Control"]="no-cache"
         headers["Authorization"]="Bearer "+ access_token
-        print(f"headers={headers}")
+        logger.info(f"headers={headers}")
         response = requests.post(url,headers=headers)
         return response.json()
     else:
@@ -105,9 +115,9 @@ def get_video_insights(access_token, video_id):
 # Step 4: Main workflow
 def get_uploaded_video_id(access_token, accountId, video_file_path, video_url = None):
     video_data = upload_and_index_video(access_token, accountId, video_file_path, video_url)
-    print(video_data)
+    logger.info(video_data)
     if 'ErrorType' in video_data and 'Message' in video_data:
-        print(f"Error type: {video_data['ErrorType']} and message: {video_data['Message']}")
+        logger.info(f"Error type: {video_data['ErrorType']} and message: {video_data['Message']}")
     if 'id' in video_data:
         video_id = video_data['id']
         return video_id
@@ -153,8 +163,8 @@ def get_video_insights(access_token, video_id):
             return data
         count+=1
         if count%10 == 0:
-            print(data)
-        print("Sleeping for ten seconds...")
+            logger.info(data)
+        logger.info("Sleeping for ten seconds...")
         time.sleep(10)  # Wait 10 seconds before checking again
 
 def get_selected_segments(insights, threshold):
@@ -170,9 +180,9 @@ def get_selected_segments(insights, threshold):
                     start = key_frame["instances"][0]["start"]
                     end = key_frame["instances"][0]["end"]
                     # total_duration += float(end) - float(start)
-                    print(f"Clipping shot: {shot_id}, key_frame: {key_frame_id}, start: {start}, end: {end}")
+                    logger.info(f"Clipping shot: {shot_id}, key_frame: {key_frame_id}, start: {start}, end: {end}")
                     selected_segments +=[(start,end)]
-        # print(f"Total duration: {total_duration}")
+        # logger.info(f"Total duration: {total_duration}")
         return selected_segments
 
 def create_project(access_token, video_id, selected_segments):
@@ -198,7 +208,7 @@ def create_project(access_token, video_id, selected_segments):
         }
         url = f"{video_indexer_endpoint}/{video_indexer_region}/Accounts/{video_indexer_account_id}/Projects?accessToken={access_token}"
         response = requests.post(url, json=data, headers=headers)
-        print(response.content)
+        logger.info(response.content)
         if response.status_code == 200:
             data = response.json()
             project_id = data["id"]
@@ -212,7 +222,7 @@ def render_video(access_token, project_id):
             "Content-Type": "application/json"
         }
         response = requests.post(url, headers=headers)
-        print(response.content)
+        logger.info(response.content)
         if response.status_code == 202:
             return response
         else:
@@ -225,14 +235,14 @@ def get_render_operation(access_token, project_id):
         data = response.json()
         if "state" in data and data['state'] == 'Succeeded':
             return data
-        print("Sleeping for ten seconds before checking on rendering...")
+        logger.info("Sleeping for ten seconds before checking on rendering...")
         time.sleep(10)  # Wait 10 seconds before checking again        
 
 def download_rendered_file(access_token, project_id):
     url = f"{video_indexer_endpoint}/{video_indexer_region}/Accounts/{video_indexer_account_id}/Projects/{project_id}/renderedfile/downloadurl?accessToken={access_token}"
     response = requests.get(url)
     if response.status_code == 200:
-        print(response.content)
+        logger.info(response.content)
         data = response.json()
         if "downloadUrl" in data:
             return data["downloadUrl"]
@@ -246,10 +256,10 @@ def index_and_download_video(account_id = None, project_id = None, video_id = No
     # '''
     if not access_token:
         access_token = get_access_token()
-    # print(access_token)
+    # logger.info(access_token)
     if not access_token:
         access_token = get_access_token()
-    # print(access_token)
+    # logger.info(access_token)
     if not video_id and not video_file_path and not video_url:
         return None
     if not video_id:
@@ -257,9 +267,9 @@ def index_and_download_video(account_id = None, project_id = None, video_id = No
             video_id = get_uploaded_video_id(access_token, account_id, video_file_path)
         if video_url:
             video_id = get_uploaded_video_id(access_token, account_id, video_file_path, video_url=video_url)
-    print(f"Video_id={video_id}")
+    logger.info(f"Video_id={video_id}")
     if not video_id:
-        print("No video.")
+        logger.info("No video.")
         return None
     insights = get_video_insights(access_token, video_id)
     if repeat:
@@ -267,14 +277,14 @@ def index_and_download_video(account_id = None, project_id = None, video_id = No
     selected_segments = get_selected_segments(insights, 10)
     if not project_id:
         project_id = create_project(access_token, video_id, selected_segments)
-    print(project_id)
+    logger.info(project_id)
     render_response = render_video(access_token, project_id)
-    print(render_response)
+    logger.info(render_response)
     if render_response:
         status = get_render_operation(access_token, project_id)
-        print(status)
+        logger.info(status)
         download_url = download_rendered_file(access_token, project_id)
-        print(download_url)
+        logger.info(download_url)
         return download_url
     '''
     download_url=video_url.strip('"')
@@ -294,7 +304,7 @@ def get_image_blob_url(video_url, frame_number, folder='images', prefix='frame',
     blob_path = '/'.join(path_parts[2:])
     # Remove the file name from the blob path
     blob_dir = '/'.join(blob_path.split('/')[:-1])
-    # print(f"parsed={parsed},path_parts={path_parts},blob_name={blob_name},container={container},blob_path={blob_path},blob_dir={blob_dir}")
+    # logger.info(f"parsed={parsed},path_parts={path_parts},blob_name={blob_name},container={container},blob_path={blob_path},blob_dir={blob_dir}")
     if blob_dir == "" or blob_dir == None:
         blob_dir = "output"
     new_path = f"{blob_dir}/{folder}"
@@ -305,7 +315,7 @@ def get_image_blob_url(video_url, frame_number, folder='images', prefix='frame',
         prefix += blob_name
     numeral=str(frame_number)
     image_path = f"{new_path}/{prefix}{numeral}.jpg"
-    # print(f"image_path={image_path}")
+    # logger.info(f"image_path={image_path}")
     
     # Rebuild the base URL (without SAS token)
     base_url = f"{parsed.scheme}://{parsed.netloc}/{container}/{image_path}"
@@ -315,7 +325,7 @@ def get_image_blob_url(video_url, frame_number, folder='images', prefix='frame',
         image_url = f"{base_url}?{sas_token}"
     else:
         image_url = base_url
-    # print(f"output={image_url}")
+    # logger.info(f"output={image_url}")
     return image_url
 
 def download_blob_to_stream(blob_client):
@@ -332,7 +342,7 @@ def extract_and_upload_frames(video_sas_url, video_id = None):
     # Use cv2 to read from bytes
     video_stream.seek(0)
     video_temp = os.path.join(os.getcwd(), f"temp_{uuid.uuid4()}.mp4")
-    print(video_temp)
+    logger.info(video_temp)
     with open(video_temp, 'wb') as f:
         f.write(video_bytes)
     vidcap = cv2.VideoCapture(video_temp)
@@ -352,20 +362,20 @@ def extract_and_upload_frames(video_sas_url, video_id = None):
         else:
             # Generate image blob URL
             image_url = get_image_blob_url(video_sas_url, frame_number, video_id=video_id).strip('"')
-            # print(image_url)
+            # logger.info(image_url)
             image_blob_client = BlobClient.from_blob_url(image_url)
             # Upload frame as image
             image_blob_client.upload_blob(image_bytes, overwrite=True)
-            print(f"Uploaded frame {frame_number} to {image_url}")
+            logger.info(f"Uploaded frame {frame_number} to {image_url}")
         frame_number += 1
     # Clean up temp file
     vidcap.release()
     if os.path.exists(video_temp):
         try:
             os.remove(video_temp)
-            print(f"Video file '{video_temp}' deleted successfully.")
+            logger.info(f"Video file '{video_temp}' deleted successfully.")
         except OSError as e:
-            print(f"Error deleting file '{video_temp}': {e}")
+            logger.info(f"Error deleting file '{video_temp}': {e}")
     return frame_number
     
 def get_uploaded_frames(video_sas_url, account_id = None, video_id = None):
@@ -381,7 +391,7 @@ def get_uploaded_frames(video_sas_url, account_id = None, video_id = None):
             credential=account_key
         )
     except Exception as e:
-       print(e)
+       logger.info(e)
        return 0
     for frame_number in range(9999):
         try:
@@ -389,7 +399,7 @@ def get_uploaded_frames(video_sas_url, account_id = None, video_id = None):
                 image_url = get_image_blob_url(video_sas_url, frame_number, video_id=video_id).strip('"')
                 prefix=f"{account_url}/{container}/"
                 blob_name=image_url.split('?')[0].replace(prefix,"")
-                # print(f"blob_name={blob_name}")
+                # logger.info(f"blob_name={blob_name}")
                 blob_client = blob_service_client.get_blob_client(container=container, blob=blob_name) 
                 exists = False
                 blob_client.get_blob_properties()
@@ -399,9 +409,9 @@ def get_uploaded_frames(video_sas_url, account_id = None, video_id = None):
                 # if BlobClient.from_blob_url(image_url).exists():
                    continue
         except Exception as e:
-            print(e)
+            logger.info(e)
             break
-        # print(image_url)
+        # logger.info(image_url)
     return frame_number
 
     
@@ -422,13 +432,13 @@ def vectorize_extracted_frames(video_sas_url, frame_number = None, video_id = No
             vector = vectorize_image(image_url, vision_api_key, vision_region)
             if vector:
                 vector = np.pad(vector, (0, 1536 - len(vector)), mode='constant')
-                print(f"Vectorized frame: {frame_number}, len={len(vector)}")
+                logger.info(f"Vectorized frame: {frame_number}, len={len(vector)}")
             description = analyze_image(analysis_client, image_url)
             if description:
-                print(f"Analyzed frame: {frame_number}")
+                logger.info(f"Analyzed frame: {frame_number}")
                 tuples += [(vector, description)]
         except Exception as e:
-            print(f"No such image: {image_url[74:80]}. Giving up...")
+            logger.info(f"No such image: {image_url[74:80]}. Giving up...")
             raise
         break
         #frame_number += 1   
@@ -440,13 +450,13 @@ def vectorize_extracted_frames_and_upload(video_sas_url, frame_number, search_cl
     # frame_number = 0
     source_sas_url = get_image_blob_url(video_sas_url, frame_number, video_id = video_id)
     for vector, description in vector_descriptions:
-        print(f"processing {frame_number} ...")
+        logger.info(f"processing {frame_number} ...")
         form_and_upload_document(search_client, account_id, frame_number, vector, description, source_sas_url, deep = False)
         # frame_number += 1
 
 # access_token = os.getenv("AZURE_VIDEO_INDEXER_ACCESS_TOKEN", get_access_token())
 # video_sas_url=video_sas_url.strip('"')
-# print(video_sas_url)
+# logger.info(video_sas_url)
 # extract_and_upload_frames(video_sas_url)
 # vision_credential = AzureKeyCredential(vision_api_key)
 # analysis_client = ImageAnalysisClient(vision_endpoint, vision_credential)
@@ -481,15 +491,15 @@ def vectorize_image(image_path, key, region):
             # The vector is in the 'vector' field of the response
             vector = result.get("vector")
             
-            # print("Vector embedding:", vector)
+            # logger.info("Vector embedding:", vector)
             return vector
         else:
-            print("Error:", response.status_code, response.text)
+            logger.info("Error:", response.status_code, response.text)
             vector = [0.0] * 1024
             raise Exception(f"Error vectorizing image {image_path[74:80]}")
 
     except (requests.exceptions.Timeout, http.client.HTTPException) as e:
-        print(f"Timeout/Error for {image_path[74:80]}. Retrying...")
+        logger.info(f"Timeout/Error for {image_path[74:80]}. Retrying...")
         raise
 
 @retry(stop=stop_after_attempt(5), wait=wait_fixed(60))
@@ -513,7 +523,7 @@ def analyze_image(client, image_url):
             visual_features=features,
             gender_neutral_caption=True        )
         # Explicitly cast to ImageAnalysisResult (for clarity)
-        # print(str(result))
+        # logger.info(str(result))
         result: ImageAnalysisResult = result
         if result is not None:
             captions = []
@@ -521,13 +531,13 @@ def analyze_image(client, image_url):
             captions += [ f"{caption.text}" for caption in result.dense_captions.list if result.dense_captions is not None]
             # Enhance result
             result.description = ",".join(captions)
-            print(result.description)
+            logger.info(result.description)
             description = pformat(result.__dict__, depth=4, compact=False)
-            print(f"1={description}")
+            logger.info(f"1={description}")
             # description = prepare_json_string_for_load(description).replace('""','')
-            # print(f"2={description}")
+            # logger.info(f"2={description}")
     except HttpResponseError as e:
-        print(str(e))
+        logger.info(str(e))
         raise
     return description
 
@@ -538,9 +548,9 @@ def upload(destination_client, document):
         upload_results = destination_client.upload_documents([document])
         error = ','.join([upload_result.error_message for upload_result in upload_results if upload_result.error_message]).strip(",")
         if error:
-            print(error)
+            logger.info(error)
     except HttpResponseError as e:
-        print(f"Error from upload: {e}")
+        logger.info(f"Error from upload: {e}")
         raise    
 
 def prepare_json_string_for_load(text):
@@ -573,10 +583,10 @@ def geolocation(image_url):
         result = response.json()
         latitude = result.get("latitude", "")
         longitude = result.get("longitude", "")
-        print(f"Estimated GPS coordinates: Latitude={latitude}, Longitude={longitude}")
+        logger.info(f"Estimated GPS coordinates: Latitude={latitude}, Longitude={longitude}")
         return latitude, longitude
     else:
-        print("Error:", response.status_code, response.text)
+        logger.info("Error:", response.status_code, response.text)
         return "", ""
         
 def read_image_from_blob(sas_url):
@@ -596,7 +606,7 @@ def upload_image_to_blob(clipped_image, object_url):
         # Upload frame as image
         image_blob_client.upload_blob(clipped_image, overwrite=True)
     except Exception as e:
-        print(f"Error uploading image to blob: {e}")
+        logger.info(f"Error uploading image to blob: {e}")
         return
     pass
 
@@ -629,9 +639,9 @@ def form_and_upload_document(destination_client, account_id, frame_number, vecto
             description_text = prepare_json_string_for_load(description).replace('""','')
             description_json = json.loads(description_text)
         except Exception as e:
-            print(f"{frame_number}: parsing error: {e}")
+            logger.info(f"{frame_number}: parsing error: {e}")
         if description_json == None:
-            print("Description could not be parsed.")
+            logger.info("Description could not be parsed.")
             return
         vision_credential = AzureKeyCredential(vision_api_key)
         analysis_client = ImageAnalysisClient(vision_endpoint, vision_credential)    
@@ -642,12 +652,12 @@ def form_and_upload_document(destination_client, account_id, frame_number, vecto
                 if objectid == 1:
                     continue
                 box = item.get("boundingBox", None)
-                print(f"{destination_file}: {box}")
+                logger.info(f"{destination_file}: {box}")
                 if box:
                     bounding_box = (box["x"], box["y"], box["w"], box["h"])
                     image = read_image_from_blob(source_sas_url)
                     if image.any() == False:
-                       print(f"{destination_file} not found.")
+                       logger.info(f"{destination_file} not found.")
                        continue
 
                     # Clip image
@@ -668,21 +678,21 @@ def form_and_upload_document(destination_client, account_id, frame_number, vecto
                             document['geotags'] = geotags
                             document["description"] = object_description   
                             upload(destination_client, document)
-                            print(f"uploaded {frame_number}-{objectid}")
+                            logger.info(f"uploaded {frame_number}-{objectid}")
                         else:
-                            print("No object description")
+                            logger.info("No object description")
                     else:
-                        print("No object vector")
+                        logger.info("No object vector")
                 else:
-                    print("no objects detected")
+                    logger.info("no objects detected")
 
 def get_timestamps(access_token, video_id):
     insights = get_video_insights(access_token, video_id)
-    #pprint(insights)
+    #plogger.info(insights)
     timestamps=[]
     for keyframe in insights['videos'][0]['insights']['shots'][0]['keyFrames']:
         timestamps+=[(keyframe['instances'][0]['start'], keyframe['instances'][0]['end'])]
-    print(timestamps)
+    logger.info(timestamps)
     return timestamps
     
 def get_search_client():
@@ -700,23 +710,23 @@ def copy_blob(source_sas_url: str, destination_sas_url: str, poll_interval: int 
         copy_props = dest_blob.start_copy_from_url(source_sas_url)
         copy_id = copy_props['copy_id']
 
-        print("Copy initiated.")
-        print(f"Copy ID: {copy_props['copy_id']}")
-        print(f"Copy Status: {copy_props['copy_status']}")
+        logger.info("Copy initiated.")
+        logger.info(f"Copy ID: {copy_props['copy_id']}")
+        logger.info(f"Copy Status: {copy_props['copy_status']}")
 
         # Poll until completion
         while True:
             props = dest_blob.get_blob_properties()
             status = props.copy.status
-            print(f"Copy status: {status}")
+            logger.info(f"Copy status: {status}")
 
             if status in ("success", "failed", "aborted"):
-                print(f"Final status: {status}")
+                logger.info(f"Final status: {status}")
                 break
             import time
             time.sleep(poll_interval)
     except Exception as e:
-        print(f"Error during blob copy: {e}")
+        logger.info(f"Error during blob copy: {e}")
     return status
 
 def get_destination_sas_url(video_sas_url: str, upload = True) -> str:
@@ -735,7 +745,7 @@ def get_destination_sas_url(video_sas_url: str, upload = True) -> str:
         permission = BlobSasPermissions(read=True, list=True)
         if upload == True:
             permission = BlobSasPermissions(read=True, write=True, create=True, list=True, add=True, delete_previous_version=True)
-        print(f"permission={permission}")
+        logger.info(f"permission={permission}")
         import datetime
         sas_token = generate_container_sas(
             account_name=account_name,
@@ -744,7 +754,7 @@ def get_destination_sas_url(video_sas_url: str, upload = True) -> str:
             permission=permission,
             expiry=datetime.datetime.utcnow() + datetime.timedelta(hours=1)
         )
-        # print(f"sas_token={sas_token}")
+        # logger.info(f"sas_token={sas_token}")
         video_sas_url = video_sas_url.split('?')[0] + "?" + sas_token
         parsed = urlparse(video_sas_url)
         path_parts = parsed.path.split('/')
@@ -753,14 +763,14 @@ def get_destination_sas_url(video_sas_url: str, upload = True) -> str:
         return video_sas_url
 
 def indexing_workflow(source_video_url, account_id = None, video_id = None):
-    print(f"account_id={account_id}")
+    logger.info(f"account_id={account_id}")
     if not account_id:
         account_id = settings.AZURE_VIDEO_INDEXER_ACCOUNT
     indexer_url = index_and_download_video(account_id = account_id, video_url = source_video_url)
     video_url = get_destination_sas_url(source_video_url)
-    print(f"Destination SAS URL: {video_url}")
+    logger.info(f"Destination SAS URL: {video_url}")
     status = copy_blob(indexer_url, video_url)
-    print(f"status of copy blob: {status}")
+    logger.info(f"status of copy blob: {status}")
     if not status or status != "success":
         return None
     # video_url = source_video_url
@@ -773,5 +783,5 @@ def indexing_workflow(source_video_url, account_id = None, video_id = None):
     client = get_search_client()
     for frame_number in range(frames):
         vectorize_extracted_frames_and_upload(video_url, frame_number, client, account_id, video_id)
-        print(f"{frame_number} indexed")
+        logger.info(f"{frame_number} indexed")
     return video_url

@@ -1,3 +1,5 @@
+import logging
+import sys
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -11,7 +13,16 @@ from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPerm
 import datetime
 from django.conf import settings
 import numpy as np
-
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    
 class VideoEntityViewSet(viewsets.ModelViewSet):
     queryset = VideoEntity.objects.all()
     serializer_class = VideoEntitySerializer
@@ -22,7 +33,7 @@ class VideoEntityViewSet(viewsets.ModelViewSet):
             videos = VideoEntity.objects.filter(account_id=account_id)
         else:
             videos = VideoEntity.objects.none()
-        # print([video.id for video in videos])
+        # logger.info([video.id for video in videos])
         serializer = self.get_serializer(videos, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
         
@@ -34,7 +45,7 @@ class VideoEntityViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("account_id must be provided in request parameters.")
 
         if str(instance.account_id) != str(account_id):
-            print(f"{account_id} Not Found.")
+            logger.info(f"{account_id} Not Found.")
             return Response({}, status=status.HTTP_200_OK)
 
         serializer = self.get_serializer(instance)
@@ -51,7 +62,7 @@ class VideoEntityViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         # Find the instance to update
         video = self.get_object()
-        # print(request.data)
+        # logger.info(request.data)
         update_data = request.data
         video.update_video(**update_data)
         serializer = self.get_serializer(video)
@@ -101,7 +112,7 @@ class VideoUploadAPIView(APIView):
             video.create_video(account_id=account_id, sas_url=sas_url)
             serializer = VideoEntitySerializer(video)
             # At this point, video is saved with sas_url set to the known constant
-            print(f"video with id:{video.id}, account_id: {video.account_id}, sas_url: {video.sas_url} and status:{video.status} created successfully.")
+            logger.info(f"video with id:{video.id}, account_id: {video.account_id}, sas_url: {video.sas_url} and status:{video.status} created successfully.")
 
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except Exception as e:
@@ -120,7 +131,7 @@ class VideoUploadAPIView(APIView):
             # video.update_video(sas_url=sas_url)
             update_data = request.data.dict()
             video.update_video(**update_data)
-            print(f"video with id:{video.id}, sas_url: {video.sas_url} and status:{video.status} updated successfully.")
+            logger.info(f"video with id:{video.id}, sas_url: {video.sas_url} and status:{video.status} updated successfully.")
             return Response({'sas_url': sas_url, 'id': video.id}, status=status.HTTP_200_OK)
         except VideoEntity.DoesNotExist:
             return Response({"error": "Not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -137,7 +148,7 @@ class VideoUploadAPIView(APIView):
 
             video.delete_video()
             
-            print(f"video with id:{video_id} deleted successfully.")
+            logger.info(f"video with id:{video_id} deleted successfully.")
             return Response({'sas_url': sas_url, 'id': video.id}, status=status.HTTP_200_OK)
         except VideoEntity.DoesNotExist:
             return Response({"error": "Not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -172,7 +183,7 @@ class ChatAPIView(APIView):
            if not video_id:
               return Response({'text': "Please upload content to analyze.",'imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
            blob_name += f"/{video_id}"
-        # print(f"account={account_name}, container={container_name}, folder={folder}, blob={blob_name}, video_id={video_id}")
+        # logger.info(f"account={account_name}, container={container_name}, folder={folder}, blob={blob_name}, video_id={video_id}")
         # account=sadronevideo, container=input, folder=2, blob=2/images/1, video_id=1
         try:
             video_sas_url = VideoEntity.objects.get(pk=video_id).sas_url
@@ -196,19 +207,19 @@ class ChatAPIView(APIView):
                 expiry=datetime.datetime.utcnow() + datetime.timedelta(hours=1)
             )
             video_sas_url = video_sas_url.split('?')[0] + "?" + sas_token
-            # print(f"video_sas_url={video_sas_url}")
+            # logger.info(f"video_sas_url={video_sas_url}")
             sas_url_template = get_image_blob_url(video_sas_url, 0, folder='images', prefix='frame', include_name=False, video_id=video_id)
-            # print(f"sas_url_template={sas_url_template}")
+            # logger.info(f"sas_url_template={sas_url_template}")
             highest = get_uploaded_frames(video_sas_url, account_id = account_id, video_id = video_id)
             frames = []
             if highest:
-                print(f"highest={highest}")
+                logger.info(f"highest={highest}")
                 frames = [str(0), str(int(highest/2)), str(highest-1)]
                 frames +=  [str(num) for num in list(range(17))]
-            # print(f"frames={frames}, frames_list={frames_list}")
+            # logger.info(f"frames={frames}, frames_list={frames_list}")
             if frames_list:
                 frames = frames_list.strip(',').split(',')
-            # print(frames)
+            # logger.info(frames)
             if not frames:
                 return Response({'text': 'Content has not been processed to analyze. Please try again later.','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
             # return Response({'text': 'Dummy Response','imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)    
@@ -219,10 +230,10 @@ class ChatAPIView(APIView):
             # response_text = synthesize_from_agents(query_text, account_id)
             # response_text = knowledge_base_search(query_text, account_id)
             # response_text = run_function_tools(query_text, account_id)
-            print(f"Answer={response_text}")
+            logger.info(f"Answer={response_text}")
             # if not response_text:
             #     response_text = perplexity_retrieval(None, query_text, account_id, frames, sas_url_template, pattern="(number)")
             return Response({'text': response_text,'imageUrl': None, 'downloadUrl': None}, status=status.HTTP_200_OK)
         except Exception as e:
-            print(e)
+            logger.info(e)
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)    

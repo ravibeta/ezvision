@@ -1,5 +1,7 @@
 #! /usr/bin/python
+import logging
 import requests
+import sys
 import cv2
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -13,6 +15,15 @@ from azure.ai.vision.imageanalysis.models import VisualFeatures
 from typing import Any, Callable, Set, Dict, List, Optional
 import os
 from django.conf import settings
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 match_threshold = 0.65
 min_number_of_cluster_members = 2
 
@@ -58,7 +69,7 @@ def count_matches(scene_uri, object_uri):
 def load_image_from_sas(url):
     response = requests.get(url)
     image_array = np.frombuffer(response.content, np.uint8)
-    print(f"image_array_size={len(image_array.tolist())}")
+    logger.info(f"image_array_size={len(image_array.tolist())}")
     return cv2.imdecode(image_array, cv2.IMREAD_COLOR)
 
 def keypoints_and_descriptors(scene_img, object_img):
@@ -79,7 +90,7 @@ def get_matched_keypoints(scene_img, object_img):
     matches = sorted(matches, key=lambda x: x.distance)
 
     matched_pts = np.float32([kp2[m.trainIdx].pt for m in matches])
-    print(f"matched_pts={matched_pts}")
+    logger.info(f"matched_pts={matched_pts}")
     return matched_pts
     
  # Extract matched descriptors using ORB
@@ -144,18 +155,18 @@ def plot_clusters(points, labels):
 
     
 def count_multiple_matches(scene_uri, object_uri):
-    print(f"scene_uri: {scene_uri}")
-    print(f"object_uri: {object_uri}")
+    logger.info(f"scene_uri: {scene_uri}")
+    logger.info(f"object_uri: {object_uri}")
     scene_img = load_image_from_sas(scene_uri)
-    print(f"scene_img={scene_img}")
+    logger.info(f"scene_img={scene_img}")
     object_img = load_image_from_sas(object_uri)
-    print(f"object_img={object_img}")
+    logger.info(f"object_img={object_img}")
     # matched_points = get_matched_keypoints(scene_img, object_img)
     # labels = cluster_keypoints_hdbscan(matched_points)
     descriptors = get_matched_descriptors(scene_img, object_img)
-    print(descriptors)
+    logger.info(descriptors)
     labels = cluster_by_similarity(descriptors)
-    print(f"len of labels={len(labels)} and labels={labels}")
+    logger.info(f"len of labels={len(labels)} and labels={labels}")
     # Count valid clusters (excluding noise label -1 and 0)
     count = len([1 for label in labels if label == 1])
     # count = len(set(labels)) - (1 if -1 in labels else 0)
@@ -164,10 +175,10 @@ def count_multiple_matches(scene_uri, object_uri):
 
 def agentic_retrieval(pattern_uri: Optional[str] = None, content_uri: Optional[str] = None, query_text: Optional[str] = None, account_id: Optional[str] = None, video_id: Optional[str] = None) -> str:
     if not pattern_uri:
-        print(f"No pattern uri for object to be detected found.")
+        logger.info(f"No pattern uri for object to be detected found.")
         pattern_uri = get_object_uri(query_text, account_id, video_id)
     if not content_uri:
-        print(f"No content uri for scene to detect objects found.")
+        logger.info(f"No content uri for scene to detect objects found.")
         content_uri = get_scene_uri(query_text, account_id, video_id)    
     count = count_multiple_matches(scene_uri, object_uri)
     return f"{count}"
@@ -210,17 +221,17 @@ def perplexity_retrieval(images_uri, query_text, account_number=2, frames=[], im
             if i >= 20:
                 break
     try:
-        print(f"perplexity_api_url = {perplexity_api_url}, perplexity_api_key = {perplexity_api_key}, query_text={query_text}")
-        print(payload)
+        logger.info(f"perplexity_api_url = {perplexity_api_url}, perplexity_api_key = {perplexity_api_key}, query_text={query_text}")
+        logger.info(payload)
         response = requests.post(perplexity_api_url, headers=headers, json=payload)
-        print(response.content)
+        logger.info(response.content)
         response.raise_for_status() # Raise an exception for bad status codes
         result = response.json()
-        print(result)
-        print(result["choices"][0]["message"]["content"])
+        logger.info(result)
+        logger.info(result["choices"][0]["message"]["content"])
         return result["choices"][0]["message"]["content"]
     except requests.exceptions.RequestException as e:
-        print(f"API Request failed: {e}")
+        logger.info(f"API Request failed: {e}")
         return "No comment."
 
 def parse_bbox(s: str):
@@ -264,16 +275,16 @@ def get_object_uri(object_description, account_id, video_id = None, frame_number
             answer = message.text_messages[-1].text.value
             for annotation in message.text_messages[-1].text.annotations:
                     if annotation.type == "url_citation":
-                        print(f"url={annotation.url_citation.url}")
+                        logger.info(f"url={annotation.url_citation.url}")
                         url =  annotation.url_citation.url
                         break
     #"""
     # answer = "url=016477-0008,{x: 0, y: 0, w: 74, h: 103}"
     # url="016477-0008"
     if answer and url:
-        print(f"answer={answer}")
+        logger.info(f"answer={answer}")
         bbox = parse_bbox(answer)
-        print(f"bbox={bbox}")
+        logger.info(f"bbox={bbox}")
         if not bbox:
             return None
         # account_id = document.split('-')[0]
@@ -284,36 +295,36 @@ def get_object_uri(object_description, account_id, video_id = None, frame_number
                from .models import VideoEntity
                video_id = VideoEntity.objects.filter(account_id=account_id).last().id
             except Exception as e:
-               print(f"Request failed: {e}")
+               logger.info(f"Request failed: {e}")
         # sas_url_template = get_sas_url_template(account_id, video_id)
-        print(f"sas_url_template={sas_url_template}")
+        logger.info(f"sas_url_template={sas_url_template}")
         image_url = get_sas_url_for_frame(account_id, sas_url_template, frame_number)
-        print(f"image_url={image_url}")
+        logger.info(f"image_url={image_url}")
         # object_url = f"{image_url}&x={bbox[0]}&y={bbox[1]}&w={bbox[2]}&h={bbox[3]}"
-        # print(f"object_url={object_url}")
+        # logger.info(f"object_url={object_url}")
         from datetime import datetime
         now = datetime.now()
         destination_file = now.strftime("%Y%m%d%H%M%S")
-        print(f"destination_file={destination_file}")
+        logger.info(f"destination_file={destination_file}")
         from .myvideoindexer import read_image_from_blob
         image = read_image_from_blob(image_url)
         if image.any() == False:
-            print(f"{url} not found.")
+            logger.info(f"{url} not found.")
             return None
         # Clip image
         x, y, width, height = bbox
         clipped_image = image[y:y+height, x:x+width]
         if clipped_image.any() == False:
-            print(f"Clipped image is empty.")
+            logger.info(f"Clipped image is empty.")
             return None
         _, buffer = cv2.imencode('.jpg', clipped_image)
         image_bytes = buffer.tobytes()
         from .myvideoindexer import get_image_blob_url
         object_url = get_image_blob_url(image_url, frame_number, folder='queries', prefix=destination_file, include_name=False)
-        print(f"object_url={object_url}")
+        logger.info(f"object_url={object_url}")
         from .myvideoindexer import upload_image_to_blob
         upload_image_to_blob(image_bytes, object_url)
-        print(f"Uploaded clipped image to {object_url}")
+        logger.info(f"Uploaded clipped image to {object_url}")
         return object_url
     return None
     pass
@@ -326,11 +337,11 @@ def get_scene_uri(query_text, account_id, video_id, frame_number = None):
     from .myvideoanalyzer import ask_agent_for_url
     document = ask_agent_for_url("scene-search-agent", f"Find a saved image for {query_text} and cite the document url where it was found")
     if document:
-        print(f"document={document}")
+        logger.info(f"document={document}")
         # account_id = document.split('-')[0]
         frame_number = document.split('-')[1]
         frame_number = str(int(frame_number))
-        print(f"frame_number={frame_number}")
+        logger.info(f"frame_number={frame_number}")
         # frame_number="15"
         sas_url_template = get_sas_url_template(account_id, video_id)
         if frame_number:
@@ -362,7 +373,7 @@ def get_sas_url_template(account_id, video_id= None, upload=False):
         permission = BlobSasPermissions(read=True, list=True)
         if upload == True:
             permission = BlobSasPermissions(read=True, write=True, create=True, list=True, add=True, delete_previous_version=True)
-        print(f"permission={permission}")
+        logger.info(f"permission={permission}")
         import datetime
         sas_token = generate_container_sas(
             account_name=account_name,
@@ -371,25 +382,25 @@ def get_sas_url_template(account_id, video_id= None, upload=False):
             permission=permission,
             expiry=datetime.datetime.utcnow() + datetime.timedelta(hours=1)
         )
-        # print(f"sas_token={sas_token}")
+        # logger.info(f"sas_token={sas_token}")
         video_sas_url = video_sas_url.split('?')[0] + "?" + sas_token
-        # print(f"video_sas_url={video_sas_url}")
+        # logger.info(f"video_sas_url={video_sas_url}")
         sas_url_template = get_image_blob_url(video_sas_url, 0, folder='images', prefix='frame', include_name=False, video_id=video_id)
-        # print(f"sas_url_template={sas_url_template}")
+        # logger.info(f"sas_url_template={sas_url_template}")
         highest = get_uploaded_frames(video_sas_url, account_id = str(account_id), video_id = video_id)
-        print(f"highest={highest}")
+        logger.info(f"highest={highest}")
         frames = []
         if highest and int(highest) > 0:
-            print(f"highest={highest}")
+            logger.info(f"highest={highest}")
             frames = [str(0), str(int(highest/2)), str(highest-1)]
         # if frames_list:
         #     frames = frames_list.strip(',').split(',')
-        print(frames)
+        logger.info(frames)
         if not frames:
             frames =  [str(num) for num in list(range(20))]
         sas_url_template = sas_url_template.replace("frame0", "frame(number)")
     except Exception as e:
-        print(f"Request failed: {e}")
+        logger.info(f"Request failed: {e}")
         sas_url_template = None
     return sas_url_template
     pass
@@ -399,11 +410,11 @@ def get_sas_url_for_frame(account_id, sas_url_template, frame_number):
         sas_url = sas_url_template.replace("frame(number)", f"frame{frame_number}")
         return sas_url
     except Exception as e:
-        print(f"Request failed: {e}")
+        logger.info(f"Request failed: {e}")
         return None
 
 def ask_perplexity(query_text, account_id = "2", video_id = None, frames_list = None):
-    print(f"ask_perplexity called with {query_text}")
+    logger.info(f"ask_perplexity called with {query_text}")
     from .models import VideoEntity
     from .serializers import VideoEntitySerializer
     from .myvideoindexer import get_image_blob_url, get_uploaded_frames
@@ -433,25 +444,25 @@ def ask_perplexity(query_text, account_id = "2", video_id = None, frames_list = 
             expiry=datetime.datetime.utcnow() + datetime.timedelta(hours=1)
         )
         video_sas_url = video_sas_url.split('?')[0] + "?" + sas_token
-        # print(f"video_sas_url={video_sas_url}")
+        # logger.info(f"video_sas_url={video_sas_url}")
         sas_url_template = get_image_blob_url(video_sas_url, 0, folder='images', prefix='frame', include_name=False, video_id=video_id)
-        # print(f"sas_url_template={sas_url_template}")
+        # logger.info(f"sas_url_template={sas_url_template}")
         highest = get_uploaded_frames(video_sas_url, account_id = str(account_id), video_id = video_id)
-        print(f"highest={highest}")
+        logger.info(f"highest={highest}")
         frames = []
         if highest and int(highest) > 0:
-            print(f"highest={highest}")
+            logger.info(f"highest={highest}")
             frames = [str(0), str(int(highest/2)), str(highest-1)]
         if frames_list:
             frames = frames_list.strip(',').split(',')
-        print(frames)
+        logger.info(frames)
         if not frames:
             frames =  [str(num) for num in list(range(20))]
         sas_url_template = sas_url_template.replace("frame0", "frame(number)")
-        # print(f"sas_url_template={sas_url_template}")
+        # logger.info(f"sas_url_template={sas_url_template}")
         return perplexity_retrieval(None, query_text, account_id, frames, sas_url_template, pattern="(number)")
     except Exception as e:
-        print(f"Request failed: {e}")
+        logger.info(f"Request failed: {e}")
         return None
         
 analyzer_functions: Set[Callable[..., Any]] = {
